@@ -36,6 +36,48 @@ SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart"
              ("fichas", "file-text", "Fichas técnicas"), ("equilibrio", "scale", "Punto de equilibrio"),
              ("reportes", "report", "Reportes"), ("usuarios", "users", "Usuarios")]
 
+# ---------- Ilustraciones (SVG) ----------
+CASA_SVG = """<svg viewBox="0 0 48 48" aria-hidden="true">
+  <path d="M24 5 L45 23 H39 V43 H9 V23 H3 Z" fill="#fff"/>
+  <rect x="20" y="29" width="8" height="14" rx="1" fill="#dd6a23"/>
+  <rect x="12" y="26" width="6" height="6" rx="1" fill="#dd6a23"/>
+  <rect x="30" y="26" width="6" height="6" rx="1" fill="#dd6a23"/>
+</svg>"""
+
+GALLO_SVG = """<svg viewBox="0 0 200 180" aria-hidden="true">
+  <g stroke="#f0a060" stroke-width="4" stroke-linecap="round">
+    <line x1="10" y1="62" x2="26" y2="62"/><line x1="18" y1="40" x2="30" y2="50"/>
+    <line x1="18" y1="84" x2="30" y2="74"/><line x1="176" y1="100" x2="192" y2="100"/>
+  </g>
+  <path d="M60 110 C 40 70, 60 30, 96 22 C 78 50, 80 80, 92 110 Z" fill="#f3a46a"/>
+  <path d="M96 140 C 120 118, 160 96, 178 40" stroke="#b5561c" stroke-width="3" fill="none"/>
+  <ellipse cx="110" cy="105" rx="52" ry="36" fill="#fff" stroke="#f1d9bf" stroke-width="2"/>
+  <path d="M86 100 q26 -32 58 -6 q-22 26 -58 6z" fill="#f6e3cc"/>
+  <path d="M100 138 l-4 24 M118 138 l4 24" stroke="#f2a53a" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="150" cy="58" r="20" fill="#fff" stroke="#f1d9bf" stroke-width="2"/>
+  <path d="M138 44 q6 -20 16 -6 q6 -14 14 2 q6 -8 8 6 q-10 6 -18 2 q-10 6 -20 -4z" fill="#e0412c"/>
+  <path d="M166 56 l18 6 l-18 6z" fill="#f2a53a"/>
+  <circle cx="156" cy="54" r="3" fill="#2a1a0e"/>
+  <path d="M158 72 q5 12 -2 18 q-5 -6 -6 -15z" fill="#e0412c"/>
+</svg>"""
+
+OLA_SVG = """<svg viewBox="0 0 600 120" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 70 C 150 20, 300 110, 450 55 S 600 30, 600 30 V120 H0Z" fill="#fde9d2"/>
+  <path d="M0 95 C 180 60, 360 110, 600 80 V120 H0Z" fill="#fbdcb8"/>
+</svg>"""
+
+GALLINA_SVG = """<svg viewBox="0 0 160 110" aria-hidden="true">
+  <path d="M0 100 C 40 70, 90 80, 160 60 V110 H0Z" fill="#f8d7ae"/>
+  <path d="M14 96 q-6 -22 6 -32 q4 14 0 32z" fill="#f2b67a"/>
+  <path d="M136 92 q-4 -26 8 -38 q2 22 -4 38z" fill="#f2b67a"/>
+  <ellipse cx="68" cy="66" rx="30" ry="20" fill="#f7b97c"/>
+  <circle cx="96" cy="46" r="13" fill="#f7b97c"/>
+  <path d="M90 34 q4 -10 10 -2 q4 -8 8 2 q-6 4 -10 2 q-6 2 -8 -2z" fill="#e0412c"/>
+  <path d="M108 44 l10 4 l-10 4z" fill="#f2a53a"/>
+  <circle cx="99" cy="44" r="2" fill="#2a1a0e"/>
+  <path d="M42 60 q-20 -14 -10 -30 q14 10 18 26z" fill="#eda163"/>
+</svg>"""
+
 
 @app.template_filter("soles")
 def soles(n):
@@ -139,7 +181,7 @@ def num_arg(nombre, defecto):
 
 
 def logo_archivo():
-    """Usa static/logo.png si existe; si no, se muestra un ícono de casa."""
+    """Usa static/logo.png si existe; si no, se muestra la casa dibujada."""
     ruta = os.path.join(app.root_path, "static", "logo.png")
     return "/static/logo.png" if os.path.exists(ruta) else None
 
@@ -154,73 +196,83 @@ PLANTILLA = """
 <title>La Granja Linda - Gestión</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
-:root{--naranja:#d9631e;--naranja-s:#c4561a;--naranja-t:#b34e12;--crema:#fdf7ef;--arena:#fbeedb;
-  --texto:#2a1a0e;--muted:#7a6a5c;--borde:#eee3d4;--blanco:#fff;
-  --ambar-f:#fdf0e0;--ambar-i:#f5e0c2;--azul-f:#eaf2fb;--azul-i:#d6e6f7;--azul-t:#2d5f9a;
-  --verde-f:#eef7e6;--verde-i:#dcefc9;--verde-t:#3b7a1e;--rojo-f:#fdeeee;--rojo-i:#f9d7d7;--rojo-t:#a8322d;
-  --barra-v:#6ab04c;--barra-r:#e5575a}
+:root{--naranja:#dd6a23;--naranja-osc:#b9531a;--arena:#fbf0e0;--crema:#fbf7f1;--texto:#2a1a0e;--muted:#7d6b5d;--borde:#f0e4d4;
+  --amb-f:#fdf1e3;--amb-i:#f8e0c0;--amb-t:#b9531a;--az-f:#ebf3fc;--az-i:#d4e6f8;--az-t:#2e6aa8;
+  --vd-f:#eff8e8;--vd-i:#d7eec4;--vd-t:#3f7d21;--am-f:#fdf9e6;--am-i:#f8ebb8;--am-t:#8a6200;
+  --rj-f:#fdeeee;--rj-i:#f8d2d2;--rj-t:#a8322d;--barra-v:#7cc05a;--barra-r:#ee6e6e}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--texto);font-size:14px;
   display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
-header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.marca{display:flex;align-items:center;gap:12px}
-.marca .icono-casa{width:48px;height:48px;background:#fff;color:var(--naranja);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:28px}
-.marca img{width:48px;height:48px;object-fit:contain;background:#fff;border-radius:10px;padding:3px}
-.marca h1{margin:0;font-size:19px;font-weight:500}
-.marca small{display:block;font-size:11px;letter-spacing:2px;color:#fbe3d2;text-transform:uppercase}
-.derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fbe3d2}
-.avatar{width:38px;height:38px;border-radius:50%;background:#fff;color:var(--naranja);display:flex;align-items:center;justify-content:center;font-size:20px}
-nav{background:var(--arena);padding:18px 12px;display:flex;flex-direction:column;gap:6px;border-right:0.5px solid var(--ambar-i)}
-nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;text-decoration:none;color:var(--naranja-t);font-size:14px}
+header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:#fff;padding:12px 24px;
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.marca{display:flex;align-items:center;gap:14px}
+.marca .casa{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;padding:6px}
+.marca .casa svg{width:100%;height:100%}
+.marca img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:12px;padding:4px}
+.marca h1{margin:0;font-size:21px;font-weight:500}
+.marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fde3cc;text-transform:uppercase;margin-top:2px}
+.derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fde3cc}
+.avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--naranja);display:flex;align-items:center;justify-content:center;font-size:20px}
+nav{background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
+nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--naranja-osc);font-size:14px}
 nav a i{font-size:20px}
-nav a:hover{background:#fff}
+nav a:hover{background:rgba(255,255,255,.7)}
 nav a.activo{background:var(--naranja);color:#fff;font-weight:500}
+.decor-menu{margin-top:auto;width:100%;opacity:.95}
+.decor-menu svg{width:100%;height:auto;display:block}
 main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
-.card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:14px;padding:18px;margin-bottom:16px}
-.cabecera{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.circ{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.circ.naranja{background:var(--ambar-i);color:var(--naranja-t)}
-.circ.azul{background:var(--azul-i);color:var(--azul-t)}
-.circ.verde{background:var(--verde-i);color:var(--verde-t)}
-.circ.rojo{background:var(--rojo-i);color:var(--rojo-t)}
-.cabecera h3{margin:0;font-size:17px;font-weight:500;color:var(--naranja-t)}
-.cabecera .aux{margin-left:auto;font-size:12px;color:var(--muted)}
-.hero{background:var(--blanco);border:0.5px solid var(--borde);border-radius:14px;padding:22px;display:flex;align-items:center;gap:18px;margin-bottom:14px}
-.hero small{color:var(--muted);font-size:13px;display:block}
-.hero b{display:block;font-size:38px;font-weight:500;color:var(--texto);margin:4px 0}
+.card{background:#fff;border:1px solid var(--borde);border-radius:16px;padding:18px;margin-bottom:16px}
+.cabecera{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.circ{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.circ.naranja{background:var(--amb-i);color:var(--naranja-osc)}
+.circ.azul{background:var(--az-i);color:var(--az-t)}
+.circ.verde{background:var(--vd-i);color:var(--vd-t)}
+.circ.rojo{background:var(--rj-i);color:var(--rj-t)}
+.cabecera h3{margin:0;font-size:18px;font-weight:500;color:var(--naranja-osc)}
+.cabecera .aux{margin-left:auto;font-size:13px;color:var(--naranja-osc);text-decoration:none}
+.hero{position:relative;overflow:hidden;background:#fff;border:1px solid var(--borde);border-radius:16px;padding:24px 26px;
+  display:flex;align-items:center;gap:18px;margin-bottom:16px;min-height:170px}
+.hero .txt{position:relative;z-index:2;display:flex;align-items:center;gap:18px}
+.hero small{color:var(--muted);font-size:14px;display:block}
+.hero b{display:block;font-size:40px;font-weight:500;color:var(--texto);margin:4px 0}
 .hero .pie{font-size:13px;color:var(--muted)}
-.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
-.bloque{border-radius:14px;padding:16px;position:relative}
+.hero .ola{position:absolute;left:0;right:0;bottom:0;height:110px;z-index:0}
+.hero .ola svg{width:100%;height:100%}
+.hero .gallo{position:absolute;right:20px;top:4px;width:230px;height:200px;z-index:1}
+.hero .gallo svg{width:100%;height:100%}
+.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px}
+.bloque{border-radius:16px;padding:18px;border:1px solid transparent}
 .bloque .top{display:flex;justify-content:space-between;align-items:flex-start}
-.bloque small{font-size:13px;display:block;margin-top:12px}
-.bloque b{display:block;font-size:24px;font-weight:500;margin:4px 0 2px;color:var(--texto)}
+.bloque .circ{width:44px;height:44px}
+.bloque .tend{font-size:20px;opacity:.9}
+.bloque small{font-size:14px;display:block;margin-top:14px}
+.bloque b{display:block;font-size:26px;font-weight:500;margin:4px 0 2px;color:var(--texto)}
 .bloque span{font-size:12px;color:var(--muted)}
-.bloque .tend{font-size:20px;opacity:.85}
-.b-ambar{background:var(--ambar-f)}.b-ambar .circ{background:var(--ambar-i);color:var(--naranja-t)}
-.b-azul{background:var(--azul-f)}.b-azul .circ{background:var(--azul-i);color:var(--azul-t)}
-.b-verde{background:var(--verde-f)}.b-verde .circ{background:var(--verde-i);color:var(--verde-t)}
-.b-rojo{background:var(--rojo-f)}.b-rojo .circ{background:var(--rojo-i);color:var(--rojo-t)}
-.b-amarillo{background:#fff8e6}.b-amarillo .circ{background:#fbe9b5;color:#8a5a00}
-.fila-plato{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:12px;font-size:14px;padding:9px 0}
-.barra{height:10px;background:#f1ece5;border-radius:6px;overflow:hidden}
-.barra div{height:100%;border-radius:6px}
+.b-ambar{background:var(--amb-f);border-color:#f7e2c6}.b-ambar .tend{color:var(--naranja)}
+.b-azul{background:var(--az-f);border-color:#d6e6f7}.b-azul .tend{color:var(--az-t)}
+.b-verde{background:var(--vd-f);border-color:#dcefc9}.b-verde .tend{color:var(--vd-t)}
+.b-rojo{background:var(--rj-f);border-color:#f7d3d3}.b-rojo .tend{color:var(--rj-t)}
+.b-amarillo{background:var(--am-f);border-color:#f5e8b5}.b-amarillo .circ{background:var(--am-i);color:var(--am-t)}
+.fila-plato{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:14px;font-size:14px;padding:10px 0}
+.barra{height:12px;background:#f3eee8;border-radius:8px;overflow:hidden}
+.barra div{height:100%;border-radius:8px}
 .nota{color:var(--muted);font-size:12px;margin:10px 0 0}
-.filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--borde);font-size:13px}
+.filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--borde);font-size:13px}
 .filas div:last-child{border-bottom:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
 form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
 form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-input,select{padding:9px 10px;border:0.5px solid #d8cbb9;border-radius:10px;font-size:14px;background:#fff;color:var(--texto)}
+input,select{padding:9px 10px;border:1px solid #e3d3be;border-radius:10px;font-size:14px;background:#fff;color:var(--texto)}
 button{background:var(--naranja);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;cursor:pointer}
-button:hover{background:var(--naranja-s)}
-button.sec{background:#fff;color:var(--naranja-t);border:0.5px solid var(--naranja);padding:5px 10px;font-size:12px}
-button.sec:hover{background:var(--ambar-f)}
+button:hover{background:var(--naranja-osc)}
+button.sec{background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);padding:5px 10px;font-size:12px}
+button.sec:hover{background:var(--amb-f)}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:9px 6px;border-bottom:0.5px solid var(--borde)}
-td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
-.flash{background:var(--rojo-f);color:var(--rojo-t);padding:11px 14px;border-radius:10px;margin-bottom:14px}
-.res{background:var(--ambar-f);color:var(--naranja-t);border-radius:10px;padding:12px 14px;margin-top:12px;font-weight:500}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:9px 6px;border-bottom:1px solid var(--borde)}
+td{padding:10px 6px;border-bottom:1px solid var(--borde)}
+.flash{background:var(--rj-f);color:var(--rj-t);padding:11px 14px;border-radius:10px;margin-bottom:14px}
+.res{background:var(--amb-f);color:var(--naranja-osc);border-radius:10px;padding:12px 14px;margin-top:12px;font-weight:500}
 </style>
 </head>
 <body>
@@ -230,7 +282,7 @@ td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
 <header>
   <div class="marca">
     {% if logo_img %}<img src="{{ logo_img }}" alt="Logo La Granja Linda">
-    {% else %}<div class="icono-casa">{{ ico('home') }}</div>{% endif %}
+    {% else %}<div class="casa">{{ casa_svg|safe }}</div>{% endif %}
     <div>
       <h1>La Granja Linda</h1>
       <small>Pollería · Gestión de costos</small>
@@ -246,6 +298,7 @@ td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
   {% for id, icono, nombre in secciones %}
     <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><i class="ti ti-{{ icono }}" aria-hidden="true"></i>{{ nombre }}</a>
   {% endfor %}
+  <div class="decor-menu">{{ gallina_svg|safe }}</div>
 </nav>
 
 <main>
@@ -286,26 +339,30 @@ td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
 {% endmacro %}
 
 {% if tab == 'dashboard' %}
-  <div class="hero">
-    <div class="circ naranja" style="width:58px;height:58px;font-size:28px">{{ ico('chart-bar') }}</div>
-    <div>
-      <small>Utilidad estimada del periodo</small>
-      <b>{{ ind.utilidad|soles }}</b>
-      <span class="pie">Calculada con las ventas, mermas y costos fijos registrados</span>
+  <section class="hero">
+    <div class="txt">
+      <div class="circ naranja" style="width:60px;height:60px;font-size:28px">{{ ico('chart-bar') }}</div>
+      <div>
+        <small>Utilidad estimada del periodo</small>
+        <b>{{ ind.utilidad|soles }}</b>
+        <span class="pie">Calculada con las ventas, mermas y costos fijos registrados</span>
+      </div>
     </div>
-  </div>
+    <div class="gallo">{{ gallo_svg|safe }}</div>
+    <div class="ola">{{ ola_svg|safe }}</div>
+  </section>
 
   <div class="bloques">
     <div class="bloque b-ambar">
-      <div class="top"><div class="circ">{{ ico('coins') }}</div>{{ ico('trending-up') }}</div>
+      <div class="top"><div class="circ naranja">{{ ico('coins') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
       <small>Ventas totales</small><b>{{ ind.ingresos|soles }}</b><span>Ingresos registrados</span>
     </div>
     <div class="bloque b-azul">
-      <div class="top"><div class="circ">{{ ico('target') }}</div>{{ ico('trending-up') }}</div>
+      <div class="top"><div class="circ azul">{{ ico('target') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
       <small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b><span>En ventas mensuales</span>
     </div>
     <div class="bloque {{ 'b-rojo' if ind.pct_mermas > 10 else 'b-verde' }}">
-      <div class="top"><div class="circ">{{ ico('leaf') }}</div>{{ ico('circle-check') }}</div>
+      <div class="top"><div class="circ verde">{{ ico('leaf') }}</div><span class="tend">{{ ico('circle-check') }}</span></div>
       <small>Mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b><span>Objetivo menor a 10%</span>
     </div>
     <div class="bloque b-amarillo">
@@ -419,7 +476,7 @@ td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
       {% else %}
         <div class="res">{{ '{:,}'.format(eq.pe) }} unidades al mes ({{ eq.pe_ventas|soles }} en ventas)</div>
         <p>Margen de contribución: {{ eq.mc|soles }} por unidad</p>
-        <p>Holgura sobre la meta: <b style="color:{{ 'var(--verde-t)' if eq.holg >= 0 else 'var(--rojo-t)' }}">{{ '%+.1f'|format(eq.holg) }}%</b></p>
+        <p>Holgura sobre la meta: <b style="color:{{ 'var(--vd-t)' if eq.holg >= 0 else 'var(--rj-t)' }}">{{ '%+.1f'|format(eq.holg) }}%</b></p>
       {% endif %}
     {% endif %}
     <p class="nota">Punto de equilibrio = Costos fijos / (Precio − Costo variable unitario)</p>
@@ -429,7 +486,7 @@ td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
 {% if tab == 'reportes' %}
   <div class="card">
     <div class="cabecera"><div class="circ naranja">{{ ico('report') }}</div><h3>Resultados mensuales</h3>
-      <a href="{{ url_for('exportar') }}" class="aux" style="color:var(--naranja-t);text-decoration:none">{{ ico('download') }} Exportar a CSV</a></div>
+      <a href="{{ url_for('exportar') }}" class="aux">{{ ico('download') }} Exportar a CSV</a></div>
     <table>
       <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
       {% for r in reportes %}
@@ -525,7 +582,8 @@ def index():
 
     return render_template_string(
         PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
-        logo_img=logo_archivo(),
+        logo_img=logo_archivo(), casa_svg=CASA_SVG, gallo_svg=GALLO_SVG,
+        ola_svg=OLA_SVG, gallina_svg=GALLINA_SVG,
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
