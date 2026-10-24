@@ -30,21 +30,11 @@ CAMPOS = {
     "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
 
-# (id, ícono, nombre)
-SECCIONES = [("dashboard", "📊", "Dashboard"), ("ventas", "💳", "Ventas"),
-             ("mermas", "📦", "Mermas"), ("costos", "🔧", "Costos MOD/CIF"),
-             ("fichas", "📋", "Fichas técnicas"), ("equilibrio", "⚖️", "Punto de equilibrio"),
-             ("reportes", "📈", "Reportes"), ("usuarios", "👤", "Usuarios")]
-
-# Logo de respaldo (granero). Si existe static/logo.png, se usa ese archivo en su lugar.
-LOGO_SVG = """<svg viewBox="0 0 64 64" aria-hidden="true">
-  <polygon points="6,28 32,6 58,28" fill="currentColor"/>
-  <rect x="12" y="28" width="40" height="28" rx="2" fill="currentColor"/>
-  <rect x="27" y="38" width="10" height="18" fill="var(--logo-puerta)"/>
-  <rect x="16" y="34" width="7" height="7" fill="var(--logo-puerta)"/>
-  <rect x="41" y="34" width="7" height="7" fill="var(--logo-puerta)"/>
-  <circle cx="32" cy="18" r="3" fill="var(--logo-puerta)"/>
-</svg>"""
+# (id, ícono Tabler, nombre)
+SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
+             ("mermas", "box", "Mermas"), ("costos", "calculator", "Costos MOD/CIF"),
+             ("fichas", "file-text", "Fichas técnicas"), ("equilibrio", "scale", "Punto de equilibrio"),
+             ("reportes", "report", "Reportes"), ("usuarios", "users", "Usuarios")]
 
 
 @app.template_filter("soles")
@@ -149,7 +139,7 @@ def num_arg(nombre, defecto):
 
 
 def logo_archivo():
-    """Devuelve la ruta del logo real si existe en static/logo.png."""
+    """Usa static/logo.png si existe; si no, se muestra un ícono de casa."""
     ruta = os.path.join(app.root_path, "static", "logo.png")
     return "/static/logo.png" if os.path.exists(ruta) else None
 
@@ -162,78 +152,99 @@ PLANTILLA = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>La Granja Linda - Gestión</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
-:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--texto:#222;--muted:#6b7280;
-  --borde:#e5e7eb;--gris:#f5f5f3;--blanco:#fff;--ambar:#FAEEDA;--ambar-t:#633806;--ambar-x:#412402;
-  --azul:#E6F1FB;--azul-t:#0C447C;--azul-x:#042C53;--rojo-f:#FCEBEB;--rojo-t:#791F1F;--rojo-x:#501313;
-  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--gris-barra:#eeeeea;--logo-puerta:#d9631e}
+:root{--naranja:#d9631e;--naranja-s:#c4561a;--naranja-t:#b34e12;--crema:#fdf7ef;--arena:#fbeedb;
+  --texto:#2a1a0e;--muted:#7a6a5c;--borde:#eee3d4;--blanco:#fff;
+  --ambar-f:#fdf0e0;--ambar-i:#f5e0c2;--azul-f:#eaf2fb;--azul-i:#d6e6f7;--azul-t:#2d5f9a;
+  --verde-f:#eef7e6;--verde-i:#dcefc9;--verde-t:#3b7a1e;--rojo-f:#fdeeee;--rojo-i:#f9d7d7;--rojo-t:#a8322d;
+  --barra-v:#6ab04c;--barra-r:#e5575a}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:var(--texto);font-size:14px;
-  display:grid;grid-template-columns:230px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
-header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:10px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--texto);font-size:14px;
+  display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .marca{display:flex;align-items:center;gap:12px}
-.marca svg,.marca .logo-img{width:46px;height:46px;color:#fff;--logo-puerta:#d9631e}
-.marca .logo-img{object-fit:contain;background:#fff;border-radius:8px;padding:3px}
-.marca h1{margin:0;font-size:17px;font-weight:500;letter-spacing:.3px}
-.marca span{font-size:11px;color:#fbe3d2;letter-spacing:1.5px;text-transform:uppercase}
-header .fecha{font-size:12px;color:#fbe3d2}
-nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:4px;border-right:0.5px solid var(--madera-osc)}
-nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;text-decoration:none;color:#633806;font-size:13px}
+.marca .icono-casa{width:48px;height:48px;background:#fff;color:var(--naranja);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:28px}
+.marca img{width:48px;height:48px;object-fit:contain;background:#fff;border-radius:10px;padding:3px}
+.marca h1{margin:0;font-size:19px;font-weight:500}
+.marca small{display:block;font-size:11px;letter-spacing:2px;color:#fbe3d2;text-transform:uppercase}
+.derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fbe3d2}
+.avatar{width:38px;height:38px;border-radius:50%;background:#fff;color:var(--naranja);display:flex;align-items:center;justify-content:center;font-size:20px}
+nav{background:var(--arena);padding:18px 12px;display:flex;flex-direction:column;gap:6px;border-right:0.5px solid var(--ambar-i)}
+nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;text-decoration:none;color:var(--naranja-t);font-size:14px}
+nav a i{font-size:20px}
 nav a:hover{background:#fff}
-nav a.activo{background:#fff;color:var(--naranja-osc);font-weight:500}
-nav a .ico{width:22px;text-align:center;font-size:15px;line-height:1}
-main{min-width:0;padding:20px;max-width:1100px;width:100%}
-.card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:16px}
-.card h3{margin:0 0 10px;font-size:15px;font-weight:500}
-.hero{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:20px 18px;margin-bottom:12px}
-.hero small{color:var(--muted);font-size:12px}
-.hero b{display:block;font-size:32px;font-weight:500;margin:4px 0}
-.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
-.bloque{border-radius:12px;padding:14px}
-.bloque small{font-size:12px}
-.bloque b{display:block;font-size:20px;font-weight:500;margin:6px 0 4px}
-.bloque span{font-size:12px}
-.ambar{background:var(--ambar);color:var(--ambar-t)}.ambar b{color:var(--ambar-x)}
-.azul{background:var(--azul);color:var(--azul-t)}.azul b{color:var(--azul-x)}
-.rojo{background:var(--rojo-f);color:var(--rojo-t)}.rojo b{color:var(--rojo-x)}
-.verde{background:var(--verde-f);color:var(--verde-t)}.verde b{color:var(--verde-x)}
-.fila-plato{display:grid;grid-template-columns:130px 1fr 60px;align-items:center;gap:10px;font-size:13px;padding:6px 0}
-.barra{height:8px;background:var(--gris-barra);border-radius:4px;overflow:hidden}
-.barra div{height:100%;border-radius:4px}
-.filas div{display:flex;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid var(--borde);font-size:13px}
+nav a.activo{background:var(--naranja);color:#fff;font-weight:500}
+main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
+.card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:14px;padding:18px;margin-bottom:16px}
+.cabecera{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.circ{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.circ.naranja{background:var(--ambar-i);color:var(--naranja-t)}
+.circ.azul{background:var(--azul-i);color:var(--azul-t)}
+.circ.verde{background:var(--verde-i);color:var(--verde-t)}
+.circ.rojo{background:var(--rojo-i);color:var(--rojo-t)}
+.cabecera h3{margin:0;font-size:17px;font-weight:500;color:var(--naranja-t)}
+.cabecera .aux{margin-left:auto;font-size:12px;color:var(--muted)}
+.hero{background:var(--blanco);border:0.5px solid var(--borde);border-radius:14px;padding:22px;display:flex;align-items:center;gap:18px;margin-bottom:14px}
+.hero small{color:var(--muted);font-size:13px;display:block}
+.hero b{display:block;font-size:38px;font-weight:500;color:var(--texto);margin:4px 0}
+.hero .pie{font-size:13px;color:var(--muted)}
+.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.bloque{border-radius:14px;padding:16px;position:relative}
+.bloque .top{display:flex;justify-content:space-between;align-items:flex-start}
+.bloque small{font-size:13px;display:block;margin-top:12px}
+.bloque b{display:block;font-size:24px;font-weight:500;margin:4px 0 2px;color:var(--texto)}
+.bloque span{font-size:12px;color:var(--muted)}
+.bloque .tend{font-size:20px;opacity:.85}
+.b-ambar{background:var(--ambar-f)}.b-ambar .circ{background:var(--ambar-i);color:var(--naranja-t)}
+.b-azul{background:var(--azul-f)}.b-azul .circ{background:var(--azul-i);color:var(--azul-t)}
+.b-verde{background:var(--verde-f)}.b-verde .circ{background:var(--verde-i);color:var(--verde-t)}
+.b-rojo{background:var(--rojo-f)}.b-rojo .circ{background:var(--rojo-i);color:var(--rojo-t)}
+.b-amarillo{background:#fff8e6}.b-amarillo .circ{background:#fbe9b5;color:#8a5a00}
+.fila-plato{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:12px;font-size:14px;padding:9px 0}
+.barra{height:10px;background:#f1ece5;border-radius:6px;overflow:hidden}
+.barra div{height:100%;border-radius:6px}
+.nota{color:var(--muted);font-size:12px;margin:10px 0 0}
+.filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:0.5px solid var(--borde);font-size:13px}
 .filas div:last-child{border-bottom:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}}
-form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}}
+form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
 form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-input,select{padding:8px;border:0.5px solid #bbb;border-radius:8px;font-size:14px;background:#fff}
-button{background:#fff;color:var(--naranja-osc);border:0.5px solid var(--naranja);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
-button:hover{background:var(--madera)}
-button.sec{padding:4px 8px;font-size:12px}
+input,select{padding:9px 10px;border:0.5px solid #d8cbb9;border-radius:10px;font-size:14px;background:#fff;color:var(--texto)}
+button{background:var(--naranja);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;cursor:pointer}
+button:hover{background:var(--naranja-s)}
+button.sec{background:#fff;color:var(--naranja-t);border:0.5px solid var(--naranja);padding:5px 10px;font-size:12px}
+button.sec:hover{background:var(--ambar-f)}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:8px 6px;border-bottom:0.5px solid var(--borde)}
-td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
-.flash{background:var(--rojo-f);color:var(--rojo-t);padding:10px;border-radius:8px;margin-bottom:14px}
-.res{background:var(--ambar);color:var(--ambar-x);border-radius:10px;padding:12px;margin-top:10px}
-.nota{color:var(--muted);font-size:12px;margin:8px 0 0}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:9px 6px;border-bottom:0.5px solid var(--borde)}
+td{padding:10px 6px;border-bottom:0.5px solid var(--borde)}
+.flash{background:var(--rojo-f);color:var(--rojo-t);padding:11px 14px;border-radius:10px;margin-bottom:14px}
+.res{background:var(--ambar-f);color:var(--naranja-t);border-radius:10px;padding:12px 14px;margin-top:12px;font-weight:500}
 </style>
 </head>
 <body>
+
+{% macro ico(nombre) %}<i class="ti ti-{{ nombre }}" aria-hidden="true"></i>{% endmacro %}
+
 <header>
   <div class="marca">
-    {% if logo_img %}<img class="logo-img" src="{{ logo_img }}" alt="Logo La Granja Linda">
-    {% else %}{{ logo_svg|safe }}{% endif %}
+    {% if logo_img %}<img src="{{ logo_img }}" alt="Logo La Granja Linda">
+    {% else %}<div class="icono-casa">{{ ico('home') }}</div>{% endif %}
     <div>
       <h1>La Granja Linda</h1>
-      <span>Pollería · Gestión de costos</span>
+      <small>Pollería · Gestión de costos</small>
     </div>
   </div>
-  <span class="fecha">Octubre 2026 · Nuevo Chimbote</span>
+  <div class="derecha">
+    <span>{{ ico('calendar') }} Octubre 2026 · Nuevo Chimbote</span>
+    <div class="avatar">{{ ico('user') }}</div>
+  </div>
 </header>
 
 <nav>
   {% for id, icono, nombre in secciones %}
-    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><span class="ico">{{ icono }}</span>{{ nombre }}</a>
+    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><i class="ti ti-{{ icono }}" aria-hidden="true"></i>{{ nombre }}</a>
   {% endfor %}
 </nav>
 
@@ -276,32 +287,47 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'dashboard' %}
   <div class="hero">
-    <small>Utilidad estimada del periodo</small>
-    <b>{{ ind.utilidad|soles }}</b>
-    <small>Calculada con las ventas, mermas y costos fijos registrados</small>
+    <div class="circ naranja" style="width:58px;height:58px;font-size:28px">{{ ico('chart-bar') }}</div>
+    <div>
+      <small>Utilidad estimada del periodo</small>
+      <b>{{ ind.utilidad|soles }}</b>
+      <span class="pie">Calculada con las ventas, mermas y costos fijos registrados</span>
+    </div>
   </div>
 
   <div class="bloques">
-    <div class="bloque ambar"><small>Ventas totales</small><b>{{ ind.ingresos|soles }}</b><span>Ingresos registrados</span></div>
-    <div class="bloque azul"><small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b><span>En ventas mensuales</span></div>
-    <div class="bloque {{ 'rojo' if ind.pct_mermas > 10 else 'verde' }}"><small>Mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b><span>Objetivo menor a 10%</span></div>
-    <div class="bloque verde"><small>Pagos digitales</small><b>{{ '%.1f'|format(ind.pct_digital) }}%</b><span>Yape, Plin y POS</span></div>
+    <div class="bloque b-ambar">
+      <div class="top"><div class="circ">{{ ico('coins') }}</div>{{ ico('trending-up') }}</div>
+      <small>Ventas totales</small><b>{{ ind.ingresos|soles }}</b><span>Ingresos registrados</span>
+    </div>
+    <div class="bloque b-azul">
+      <div class="top"><div class="circ">{{ ico('target') }}</div>{{ ico('trending-up') }}</div>
+      <small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b><span>En ventas mensuales</span>
+    </div>
+    <div class="bloque {{ 'b-rojo' if ind.pct_mermas > 10 else 'b-verde' }}">
+      <div class="top"><div class="circ">{{ ico('leaf') }}</div>{{ ico('circle-check') }}</div>
+      <small>Mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b><span>Objetivo menor a 10%</span>
+    </div>
+    <div class="bloque b-amarillo">
+      <div class="top"><div class="circ">{{ ico('wallet') }}</div></div>
+      <small>Pagos digitales</small><b>{{ '%.1f'|format(ind.pct_digital) }}%</b><span>Yape, Plin y POS</span>
+    </div>
   </div>
 
   <div class="card">
-    <h3>Platos por margen</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('chart-bar') }}</div><h3>Platos por margen</h3></div>
     {% for p in platos %}
     <div class="fila-plato">
       <span>{{ p['nombre'] }}</span>
-      <div class="barra"><div style="width:{{ p['margen'] }}%;background:{{ '#639922' if p['margen'] >= 35 else '#E24B4A' }}"></div></div>
-      <span>{{ p['margen'] }}%</span>
+      <div class="barra"><div style="width:{{ p['margen'] }}%;background:{{ 'var(--barra-v)' if p['margen'] >= 35 else 'var(--barra-r)' }}"></div></div>
+      <span style="text-align:right">{{ p['margen'] }}%</span>
     </div>
     {% endfor %}
     <p class="nota">Verde: margen de 35% o más. Rojo: menos de 35%.</p>
   </div>
 
   <div class="card filas">
-    <h3>Detalle por plato</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('file-text') }}</div><h3>Detalle por plato</h3></div>
     {% for p in platos %}
     <div><span>{{ p['nombre'] }}</span><span>Costo {{ p['costo']|soles }} · Precio {{ p['precio']|soles }} · Ganancia {{ (p['precio']-p['costo'])|soles }}</span></div>
     {% endfor %}
@@ -310,7 +336,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'ventas' %}
   <div class="card">
-    <h3>Registrar venta</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('shopping-cart') }}</div><h3>Registrar venta</h3></div>
     {{ registro('ventas', campos.ventas,
        [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas) }}
   </div>
@@ -318,7 +344,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'mermas' %}
   <div class="card">
-    <h3>Registrar merma</h3>
+    <div class="cabecera"><div class="circ rojo">{{ ico('box') }}</div><h3>Registrar merma</h3></div>
     {{ registro('mermas', campos.mermas,
        [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('costo','Costo'),('causa','Causa')], mermas) }}
     <div class="res">Costo total de mermas registradas: {{ mermas_total|soles }}</div>
@@ -328,18 +354,18 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 {% if tab == 'costos' %}
   <div class="grid2">
     <div class="card">
-      <h3>Mano de Obra Directa (MOD)</h3>
+      <div class="cabecera"><div class="circ naranja">{{ ico('users') }}</div><h3>Mano de Obra Directa (MOD)</h3></div>
       {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod) }}
       <div class="res">Total MOD: {{ total_mod|soles }}</div>
     </div>
     <div class="card">
-      <h3>Costos Indirectos (CIF)</h3>
+      <div class="cabecera"><div class="circ naranja">{{ ico('building-store') }}</div><h3>Costos Indirectos (CIF)</h3></div>
       {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif) }}
       <div class="res">Total CIF: {{ total_cif|soles }}</div>
     </div>
   </div>
   <div class="card">
-    <h3>Prorrateo por plato</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('calculator') }}</div><h3>Prorrateo por plato</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="costos">
       <label>Unidades vendidas al mes<input type="number" name="unid" value="{{ unid|int }}" min="1"></label>
@@ -352,7 +378,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'fichas' %}
   <div class="card">
-    <h3>Ficha técnica de costo unitario</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('file-text') }}</div><h3>Ficha técnica de costo unitario</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="fichas">
       <label>MPD (S/)<input type="number" step="any" name="f_mpd" value="60"></label>
@@ -366,7 +392,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
     {% endif %}
   </div>
   <div class="card">
-    <h3>Platos del menú</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('tools-kitchen-2') }}</div><h3>Platos del menú</h3></div>
     <table>
       <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Margen</th></tr>
       {% for p in platos %}
@@ -378,7 +404,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'equilibrio' %}
   <div class="card">
-    <h3>Cálculo del punto de equilibrio</h3>
+    <div class="cabecera"><div class="circ azul">{{ ico('scale') }}</div><h3>Cálculo del punto de equilibrio</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="equilibrio">
       <label>Costos fijos (S/)<input type="number" step="any" name="e_fijos" value="56000"></label>
@@ -393,7 +419,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
       {% else %}
         <div class="res">{{ '{:,}'.format(eq.pe) }} unidades al mes ({{ eq.pe_ventas|soles }} en ventas)</div>
         <p>Margen de contribución: {{ eq.mc|soles }} por unidad</p>
-        <p>Holgura sobre la meta: <b style="color:{{ '#27500A' if eq.holg >= 0 else '#791F1F' }}">{{ '%+.1f'|format(eq.holg) }}%</b></p>
+        <p>Holgura sobre la meta: <b style="color:{{ 'var(--verde-t)' if eq.holg >= 0 else 'var(--rojo-t)' }}">{{ '%+.1f'|format(eq.holg) }}%</b></p>
       {% endif %}
     {% endif %}
     <p class="nota">Punto de equilibrio = Costos fijos / (Precio − Costo variable unitario)</p>
@@ -402,7 +428,8 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'reportes' %}
   <div class="card">
-    <h3>Resultados mensuales <a href="{{ url_for('exportar') }}" style="float:right;font-size:12px">Exportar a CSV</a></h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('report') }}</div><h3>Resultados mensuales</h3>
+      <a href="{{ url_for('exportar') }}" class="aux" style="color:var(--naranja-t);text-decoration:none">{{ ico('download') }} Exportar a CSV</a></div>
     <table>
       <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
       {% for r in reportes %}
@@ -414,7 +441,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 
 {% if tab == 'usuarios' %}
   <div class="card">
-    <h3>Usuarios del sistema</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('users') }}</div><h3>Usuarios del sistema</h3></div>
     <table>
       <tr><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr>
       {% for u in usuarios %}
@@ -435,7 +462,7 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
     </table>
   </div>
   <div class="card">
-    <h3>Agregar usuario</h3>
+    <div class="cabecera"><div class="circ naranja">{{ ico('user-plus') }}</div><h3>Agregar usuario</h3></div>
     {{ registro('usuarios', campos.usuarios, [], []) }}
   </div>
 {% endif %}
@@ -498,7 +525,7 @@ def index():
 
     return render_template_string(
         PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
-        logo_img=logo_archivo(), logo_svg=LOGO_SVG,
+        logo_img=logo_archivo(),
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
