@@ -213,7 +213,7 @@ header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fde3cc;text-transform:uppercase;margin-top:2px}
 .derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fde3cc}
 .avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--naranja);display:flex;align-items:center;justify-content:center;font-size:20px}
-nav{background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
+nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
 nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--naranja-osc);font-size:14px}
 nav a i{font-size:20px}
 nav a:hover{background:rgba(255,255,255,.7)}
@@ -260,7 +260,7 @@ main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
 .filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--borde);font-size:13px}
 .filas div:last-child{border-bottom:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
 form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
 form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 input,select{padding:9px 10px;border:1px solid #e3d3be;border-radius:10px;font-size:14px;background:#fff;color:var(--texto)}
