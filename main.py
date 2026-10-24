@@ -17,6 +17,9 @@ CANALES = ["Salón", "Delivery propio", "Apps de delivery", "Llevar (take away)"
 PAGOS = ["Efectivo", "Yape", "Plin", "POS (tarjeta)"]
 CAUSAS = ["Mano", "Razón", "Vencimiento", "Preparación"]
 ROLES = ["Administrador", "Caja", "Cocina", "Compras"]
+PUESTOS = ["Cocinero(a) principal", "Ayudante de cocina", "Cajero(a)", "Delivery", "Otro"]
+CONCEPTOS_CIF = ["Servicios públicos", "Arrendamiento del local", "Mantenimiento de equipos",
+                 "Arbitrios", "Otro"]
 
 CAMPOS = {
     "ventas": [("fecha", "Fecha", "fecha", None), ("plato", "Plato", "texto", None),
@@ -25,10 +28,18 @@ CAMPOS = {
     "mermas": [("fecha", "Fecha", "fecha", None), ("insumo", "Insumo", "texto", None),
                ("cantidad", "Cantidad", "decimal", None), ("costo", "Costo (S/)", "decimal", None),
                ("causa", "Causa", "texto", CAUSAS)],
-    "planilla_mod": [("rol", "Puesto", "texto", None), ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
-    "costos_cif": [("concepto", "Concepto", "texto", None), ("monto", "Monto mensual (S/)", "decimal", None)],
+    "planilla_mod": [("rol", "Puesto", "texto", PUESTOS),
+                     ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
+    "costos_cif": [("concepto", "Concepto", "texto", CONCEPTOS_CIF),
+                   ("monto", "Monto mensual (S/)", "decimal", None)],
     "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
+
+# Ícono de cada campo (Tabler, línea)
+ICONOS = {"rol": "user", "sueldo": "coin", "concepto": "file-text", "monto": "coin",
+          "fecha": "calendar", "plato": "tools-kitchen-2", "cantidad": "hash",
+          "canal": "truck-delivery", "pago": "credit-card", "insumo": "carrot",
+          "costo": "coin", "causa": "alert-triangle", "nombre": "user"}
 
 # (id, ícono Tabler, nombre)
 SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
@@ -196,9 +207,9 @@ PLANTILLA = """
 <title>La Granja Linda - Gestión</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
-:root{--naranja:#dd6a23;--naranja-osc:#b9531a;--arena:#fbf0e0;--crema:#fbf7f1;--texto:#2a1a0e;--muted:#7d6b5d;--borde:#f0e4d4;
-  --amb-f:#fdf1e3;--amb-i:#f8e0c0;--amb-t:#b9531a;--az-f:#ebf3fc;--az-i:#d4e6f8;--az-t:#2e6aa8;
-  --vd-f:#eff8e8;--vd-i:#d7eec4;--vd-t:#3f7d21;--am-f:#fdf9e6;--am-i:#f8ebb8;--am-t:#8a6200;
+:root{--naranja:#e0661f;--naranja-osc:#b9531a;--crema:#fbf7f1;--texto:#2a1a0e;--muted:#7d6b5d;--borde:#f0e4d4;
+  --amb-f:#fdf1e3;--amb-i:#f8e0c0;--az-f:#ebf3fc;--az-i:#d4e6f8;--az-t:#2e6aa8;
+  --vd-f:#eef7ea;--vd-i:#d7eec4;--vd-t:#3f7d21;--verde-btn:#3f7d3a;--am-f:#fdf9e6;--am-i:#f8ebb8;--am-t:#8a6200;
   --rj-f:#fdeeee;--rj-i:#f8d2d2;--rj-t:#a8322d;--barra-v:#7cc05a;--barra-r:#ee6e6e}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--texto);font-size:14px;
@@ -261,18 +272,51 @@ main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
 .filas div:last-child{border-bottom:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
-form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px}
-form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-input,select{padding:9px 10px;border:1px solid #e3d3be;border-radius:10px;font-size:14px;background:#fff;color:var(--texto)}
-button{background:var(--naranja);color:#fff;border:none;border-radius:10px;padding:9px 16px;font-size:14px;cursor:pointer}
+
+/* Formularios */
+form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 18px;margin-bottom:14px;align-items:end}
+.campo{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--texto);font-weight:500}
+.campo .lbl{display:flex;align-items:center;gap:8px}
+.campo .lbl i{font-size:17px;color:var(--naranja)}
+.verde .campo .lbl i{color:var(--verde-btn)}
+.caja{position:relative;display:block}
+.caja.sel::after{content:"";position:absolute;right:18px;top:45%;width:8px;height:8px;border-right:2px solid #9a8a7a;border-bottom:2px solid #9a8a7a;transform:rotate(45deg);pointer-events:none}
+input,select{height:48px;width:100%;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;background:#fff;color:var(--texto);font-family:inherit}
+input::placeholder{color:#a79685}
+select{appearance:none;-webkit-appearance:none;padding-right:38px;cursor:pointer}
+select:invalid{color:#a79685}
+input:focus,select:focus{outline:none;border-color:var(--naranja);box-shadow:0 0 0 3px rgba(224,102,31,.15)}
+.verde input:focus,.verde select:focus{border-color:var(--verde-btn);box-shadow:0 0 0 3px rgba(63,125,58,.15)}
+.accion{grid-column:1/-1;display:flex;align-items:center;gap:14px}
+button{height:48px;padding:0 22px;border-radius:12px;border:none;background:var(--naranja);color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 button:hover{background:var(--naranja-osc)}
-button.sec{background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);padding:5px 10px;font-size:12px}
+button.verde{background:var(--verde-btn)}
+button.verde:hover{background:#2f6b2c}
+button i{font-size:18px}
+
+/* Botón eliminar */
+button.sec{height:auto;padding:7px 14px;border-radius:10px;background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);font-size:13px;font-weight:500}
 button.sec:hover{background:var(--amb-f)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:9px 6px;border-bottom:1px solid var(--borde)}
-td{padding:10px 6px;border-bottom:1px solid var(--borde)}
-.flash{background:var(--rj-f);color:var(--rj-t);padding:11px 14px;border-radius:10px;margin-bottom:14px}
-.res{background:var(--amb-f);color:var(--naranja-osc);border-radius:10px;padding:12px 14px;margin-top:12px;font-weight:500}
+button.sec.verde{color:#2f6b2c;border-color:var(--verde-btn);background:#fff}
+button.sec.verde:hover{background:var(--vd-f)}
+button.sec i{font-size:16px}
+
+/* Tablas tipo tarjeta */
+table{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:14px}
+th{text-align:left;font-size:13px;color:var(--texto);font-weight:500;padding:12px 14px;background:var(--amb-f);border:none}
+th:first-child{border-radius:12px 0 0 12px}
+th:last-child{border-radius:0 12px 12px 0}
+td{padding:14px;background:#fff;border-top:1px solid #f1e6d8;border-bottom:1px solid #f1e6d8}
+td:first-child{border-left:1px solid #f1e6d8;border-radius:12px 0 0 12px}
+td:last-child{border-right:1px solid #f1e6d8;border-radius:0 12px 12px 0}
+table.verde th{background:var(--vd-f)}
+table.verde td{border-color:#e4f0dc}
+.res{background:var(--amb-f);color:var(--naranja-osc);border-radius:12px;padding:14px 16px;margin-top:12px;font-weight:500}
+.total{display:flex;align-items:center;gap:14px;background:var(--amb-f);border-radius:14px;padding:16px 18px;margin-top:14px;font-size:14px;color:var(--texto)}
+.total b{font-size:22px;font-weight:500;display:block;color:var(--naranja-osc)}
+.total.verde{background:var(--vd-f)}
+.total.verde b{color:var(--vd-t)}
+.flash{background:var(--rj-f);color:var(--rj-t);padding:11px 14px;border-radius:12px;margin-bottom:14px}
 </style>
 </head>
 <body>
@@ -304,38 +348,48 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
 <main>
 {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
 
-{% macro registro(tabla, campos, columnas, filas) %}
-  <form class="reg" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
+{% macro registro(tabla, campos, columnas, filas, color='naranja', boton='Agregar') %}
+  <form class="reg {{ color }}" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
     <input type="hidden" name="tab" value="{{ tab }}">
     {% for n, e, t, opciones in campos %}
-      <label>{{ e }}
+      <label class="campo">
+        <span class="lbl"><i class="ti ti-{{ iconos.get(n, 'point') }}" aria-hidden="true"></i>{{ e }}</span>
         {% if opciones %}
-          <select name="{{ n }}">{% for o in opciones %}<option>{{ o }}</option>{% endfor %}</select>
+          <span class="caja sel">
+            <select name="{{ n }}" required>
+              <option value="" disabled selected>Selecciona una opción</option>
+              {% for o in opciones %}<option>{{ o }}</option>{% endfor %}
+            </select>
+          </span>
         {% elif t == 'fecha' %}
-          <input type="date" name="{{ n }}" value="{{ hoy }}" required>
+          <span class="caja"><input type="date" name="{{ n }}" value="{{ hoy }}" required></span>
         {% elif t == 'texto' %}
-          <input type="text" name="{{ n }}" required>
+          <span class="caja"><input type="text" name="{{ n }}" placeholder="Ingresa {{ e|lower }}" required></span>
         {% else %}
-          <input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" required>
+          <span class="caja"><input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" placeholder="Ingresa {{ e|lower }}" required></span>
         {% endif %}
       </label>
     {% endfor %}
-    <button>Agregar</button>
+    <div class="accion">
+      <button class="{{ color }}"><i class="ti ti-plus" aria-hidden="true"></i>{{ boton }}</button>
+    </div>
   </form>
-  <table>
+  {% if columnas %}
+  <table class="{{ color }}">
     <tr>{% for c, lbl in columnas %}<th>{{ lbl }}</th>{% endfor %}<th></th></tr>
     {% for f in filas %}
     <tr>
       {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
-      <td>
-        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
+      <td style="text-align:right">
+        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" style="display:inline">
           <input type="hidden" name="tab" value="{{ tab }}">
-          <button class="sec">Eliminar</button>
+          <button class="sec {{ color }}"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
         </form>
       </td>
     </tr>
     {% endfor %}
   </table>
+  {% endif %}
 {% endmacro %}
 
 {% if tab == 'dashboard' %}
@@ -395,7 +449,8 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
   <div class="card">
     <div class="cabecera"><div class="circ naranja">{{ ico('shopping-cart') }}</div><h3>Registrar venta</h3></div>
     {{ registro('ventas', campos.ventas,
-       [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas) }}
+       [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas,
+       'naranja', 'Registrar venta') }}
   </div>
 {% endif %}
 
@@ -403,7 +458,8 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
   <div class="card">
     <div class="cabecera"><div class="circ rojo">{{ ico('box') }}</div><h3>Registrar merma</h3></div>
     {{ registro('mermas', campos.mermas,
-       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('costo','Costo'),('causa','Causa')], mermas) }}
+       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('costo','Costo'),('causa','Causa')], mermas,
+       'naranja', 'Registrar merma') }}
     <div class="res">Costo total de mermas registradas: {{ mermas_total|soles }}</div>
   </div>
 {% endif %}
@@ -412,21 +468,22 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
   <div class="grid2">
     <div class="card">
       <div class="cabecera"><div class="circ naranja">{{ ico('users') }}</div><h3>Mano de Obra Directa (MOD)</h3></div>
-      {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod) }}
-      <div class="res">Total MOD: {{ total_mod|soles }}</div>
+      {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod, 'naranja') }}
+      <div class="total"><div><small>Total MOD</small><b>{{ total_mod|soles }}</b></div></div>
     </div>
-    <div class="card">
-      <div class="cabecera"><div class="circ naranja">{{ ico('building-store') }}</div><h3>Costos Indirectos (CIF)</h3></div>
-      {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif) }}
-      <div class="res">Total CIF: {{ total_cif|soles }}</div>
+    <div class="card verde">
+      <div class="cabecera"><div class="circ verde">{{ ico('building-store') }}</div><h3>Costos Indirectos (CIF)</h3></div>
+      {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif, 'verde') }}
+      <div class="total verde"><div><small>Total CIF</small><b>{{ total_cif|soles }}</b></div></div>
     </div>
   </div>
   <div class="card">
     <div class="cabecera"><div class="circ naranja">{{ ico('calculator') }}</div><h3>Prorrateo por plato</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="costos">
-      <label>Unidades vendidas al mes<input type="number" name="unid" value="{{ unid|int }}" min="1"></label>
-      <button>Calcular</button>
+      <label class="campo"><span class="lbl"><i class="ti ti-hash" aria-hidden="true"></i>Unidades vendidas al mes</span>
+        <span class="caja"><input type="number" name="unid" value="{{ unid|int }}" min="1"></span></label>
+      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
     </form>
     <div class="res">MOD + CIF: {{ (total_mod+total_cif)|soles }}
       {% if pro %} → {{ pro|soles }} por plato{% endif %}</div>
@@ -438,11 +495,11 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
     <div class="cabecera"><div class="circ naranja">{{ ico('file-text') }}</div><h3>Ficha técnica de costo unitario</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="fichas">
-      <label>MPD (S/)<input type="number" step="any" name="f_mpd" value="60"></label>
-      <label>MOD (S/)<input type="number" step="any" name="f_mod" value="8"></label>
-      <label>CIF (S/)<input type="number" step="any" name="f_cif" value="7"></label>
-      <label>Precio de venta (S/)<input type="number" step="any" name="f_precio" value="115"></label>
-      <button>Calcular</button>
+      <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>MPD (S/)</span><span class="caja"><input type="number" step="any" name="f_mpd" value="60"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>MOD (S/)</span><span class="caja"><input type="number" step="any" name="f_mod" value="8"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-file-text" aria-hidden="true"></i>CIF (S/)</span><span class="caja"><input type="number" step="any" name="f_cif" value="7"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-tag" aria-hidden="true"></i>Precio de venta (S/)</span><span class="caja"><input type="number" step="any" name="f_precio" value="115"></span></label>
+      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
     </form>
     {% if ficha %}
     <div class="res">Costo total: {{ ficha.costo|soles }} · Ganancia: {{ ficha.ganancia|soles }} · Margen: {{ '%.1f'|format(ficha.margen) }}%</div>
@@ -464,11 +521,11 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
     <div class="cabecera"><div class="circ azul">{{ ico('scale') }}</div><h3>Cálculo del punto de equilibrio</h3></div>
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="equilibrio">
-      <label>Costos fijos (S/)<input type="number" step="any" name="e_fijos" value="56000"></label>
-      <label>Precio (S/)<input type="number" step="any" name="e_precio" value="115"></label>
-      <label>Costo variable (S/)<input type="number" step="any" name="e_var" value="75"></label>
-      <label>Meta (unidades)<input type="number" name="e_meta" value="1800"></label>
-      <button>Calcular</button>
+      <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>Costos fijos (S/)</span><span class="caja"><input type="number" step="any" name="e_fijos" value="56000"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-tag" aria-hidden="true"></i>Precio (S/)</span><span class="caja"><input type="number" step="any" name="e_precio" value="115"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>Costo variable (S/)</span><span class="caja"><input type="number" step="any" name="e_var" value="75"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-target" aria-hidden="true"></i>Meta (unidades)</span><span class="caja"><input type="number" name="e_meta" value="1800"></span></label>
+      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
     </form>
     {% if eq %}
       {% if eq.error %}
@@ -505,13 +562,13 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
       <tr>
         <td>{{ u['nombre'] }}</td><td>{{ u['rol'] }}</td>
         <td>{{ 'Activo' if u['activo'] else 'Inactivo' }}</td>
-        <td>
+        <td style="text-align:right">
           <form method="post" action="{{ url_for('toggle_usuario', id_=u['id']) }}" style="display:inline">
             <button class="sec">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
           </form>
           <form method="post" action="{{ url_for('eliminar', tabla='usuarios', id_=u['id']) }}" style="display:inline">
             <input type="hidden" name="tab" value="usuarios">
-            <button class="sec">Eliminar</button>
+            <button class="sec"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
           </form>
         </td>
       </tr>
@@ -520,7 +577,7 @@ td{padding:10px 6px;border-bottom:1px solid var(--borde)}
   </div>
   <div class="card">
     <div class="cabecera"><div class="circ naranja">{{ ico('user-plus') }}</div><h3>Agregar usuario</h3></div>
-    {{ registro('usuarios', campos.usuarios, [], []) }}
+    {{ registro('usuarios', campos.usuarios, [], [], 'naranja', 'Agregar usuario') }}
   </div>
 {% endif %}
 </main>
@@ -583,7 +640,7 @@ def index():
     return render_template_string(
         PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
         logo_img=logo_archivo(), casa_svg=CASA_SVG, gallo_svg=GALLO_SVG,
-        ola_svg=OLA_SVG, gallina_svg=GALLINA_SVG,
+        ola_svg=OLA_SVG, gallina_svg=GALLINA_SVG, iconos=ICONOS,
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
