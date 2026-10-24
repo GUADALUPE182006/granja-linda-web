@@ -212,9 +212,29 @@ PLANTILLA = """
   --rj-f:#fdeeee;--rj-i:#f8d2d2;--rj-t:#a8322d;--barra-v:#7cc05a;--barra-r:#ee6e6e}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:#fbf7f2;color:var(--tx);font-size:14px;
-  display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+  display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh;overflow-x:hidden}
+
+/* ----- Animación de fondo ----- */
+.fondo-anim{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.fondo-anim .blob{position:absolute;border-radius:50%;filter:blur(40px);opacity:.55;animation:respira 14s ease-in-out infinite}
+.fondo-anim .b1{width:420px;height:420px;background:#fde0c4;top:-120px;right:-80px}
+.fondo-anim .b2{width:360px;height:360px;background:#d7eec4;bottom:-140px;left:200px;animation-delay:-5s}
+.fondo-anim .b3{width:280px;height:280px;background:#fbd3b1;top:40%;left:30%;animation-delay:-9s}
+.fondo-anim .ic{position:absolute;color:#e0a57a;opacity:.22;animation:flota 9s ease-in-out infinite}
+.fondo-anim .i1{font-size:34px;top:18%;left:44%;animation-delay:-1s}
+.fondo-anim .i2{font-size:26px;top:62%;left:58%;animation-delay:-4s;color:#8fbf7a}
+.fondo-anim .i3{font-size:30px;top:80%;left:12%;animation-delay:-6s}
+.fondo-anim .i4{font-size:22px;top:30%;left:78%;animation-delay:-2s;color:#8fbf7a}
+.fondo-anim .i5{font-size:28px;top:8%;left:62%;animation-delay:-7s}
+@keyframes respira{0%,100%{transform:scale(1) translate(0,0)}50%{transform:scale(1.12) translate(20px,-14px)}}
+@keyframes flota{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-26px) rotate(14deg)}}
+
+/* ----- Halo que sigue el cursor ----- */
+#cursor-glow{position:fixed;left:0;top:0;width:320px;height:320px;border-radius:50%;pointer-events:none;z-index:0;
+  background:radial-gradient(circle,rgba(224,102,31,.16),rgba(224,102,31,0) 70%);opacity:0;transition:opacity .4s;will-change:transform}
+
 header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:#fff;padding:12px 24px;
-  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:2}
 .marca{display:flex;align-items:center;gap:14px}
 .marca .casa{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;padding:6px}
 .marca .casa svg{width:100%;height:100%}
@@ -223,17 +243,24 @@ header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fde3cc;text-transform:uppercase;margin-top:2px}
 .derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fde3cc}
 .avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--or);display:flex;align-items:center;justify-content:center;font-size:20px}
-nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
-nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--or-osc);font-size:14px}
+nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;z-index:2;background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
+nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--or-osc);font-size:14px;transition:background .2s,transform .15s}
 nav a i{font-size:20px}
-nav a:hover{background:rgba(255,255,255,.7)}
+nav a:hover{background:rgba(255,255,255,.7);transform:translateX(3px)}
 nav a.activo{background:var(--or);color:#fff;font-weight:500}
 .decor-menu{margin-top:auto;width:100%}
 .decor-menu svg{width:100%;height:auto;display:block}
-main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
+main{min-width:0;padding:22px 26px;max-width:1180px;width:100%;position:relative;z-index:1}
+
+/* Entrada suave de cada bloque */
+main > *{animation:sube .5s ease both}
+main > *:nth-child(2){animation-delay:.05s}
+main > *:nth-child(3){animation-delay:.1s}
+@keyframes sube{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 
 /* Tarjetas con banda de encabezado */
-.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 2px 14px rgba(120,60,20,.07);overflow:hidden}
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 2px 14px rgba(120,60,20,.07);overflow:hidden;transition:transform .25s,box-shadow .25s}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(120,60,20,.12)}
 .banner{display:flex;align-items:center;gap:16px;padding:18px 20px;margin:-18px -18px 18px;position:relative;overflow:hidden}
 .banner.naranja{background:linear-gradient(90deg,#fdeadb,#fbd3b1)}
 .banner.verde{background:linear-gradient(90deg,#e4f3ee,#c4e6da)}
@@ -253,10 +280,8 @@ main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
 .azul h3{color:#1f4f85}.azul p{color:#3d5f80}
 .rojo h3{color:#8a2a20}.rojo p{color:#7a3a33}
 .gris h3{color:#4a3a2a}.gris p{color:#6b5a4a}
-.banner .deco{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:44px;opacity:.35}
-.banner .deco svg{width:90px;height:90px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}#cursor-glow{display:none}}
 
 /* Panel principal */
 .hero{position:relative;overflow:hidden;background:#fff;border-radius:18px;padding:24px 26px;display:flex;align-items:center;gap:18px;margin-bottom:18px;min-height:170px;box-shadow:0 2px 14px rgba(120,60,20,.07)}
@@ -269,7 +294,8 @@ main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
 .hero .gallo{position:absolute;right:20px;top:4px;width:230px;height:200px;z-index:1}
 .hero .gallo svg{width:100%;height:100%}
 .bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
-.bloque{border-radius:18px;padding:18px;border:1px solid transparent}
+.bloque{border-radius:18px;padding:18px;border:1px solid transparent;transition:transform .25s}
+.bloque:hover{transform:translateY(-3px)}
 .bloque .top{display:flex;justify-content:space-between;align-items:flex-start}
 .bloque .circ{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px}
 .bloque .tend{font-size:20px;opacity:.9}
@@ -283,7 +309,7 @@ main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
 .b-amarillo{background:var(--am-f);border-color:#f5e8b5}.b-amarillo .circ{background:var(--am-i);color:var(--am-t)}
 .fila-plato{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:14px;font-size:14px;padding:10px 0}
 .barra{height:12px;background:#f3eee8;border-radius:8px;overflow:hidden}
-.barra div{height:100%;border-radius:8px}
+.barra div{height:100%;border-radius:8px;transition:width .8s ease}
 .nota{color:var(--mu);font-size:12px;margin:10px 0 0}
 .filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--ln);font-size:13px}
 .filas div:last-child{border-bottom:none}
@@ -296,7 +322,7 @@ form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));g
 .verde .campo .lbl i{color:var(--verde)}
 .caja{position:relative;display:block}
 .caja.sel::after{content:"";position:absolute;right:18px;top:45%;width:8px;height:8px;border-right:2px solid #9a8a7a;border-bottom:2px solid #9a8a7a;transform:rotate(45deg);pointer-events:none}
-input,select{height:48px;width:100%;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;background:#fff;color:var(--tx);font-family:inherit}
+input,select{height:48px;width:100%;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;background:#fff;color:var(--tx);font-family:inherit;transition:border-color .2s,box-shadow .2s}
 input::placeholder{color:#a79685}
 select{appearance:none;-webkit-appearance:none;padding-right:38px;cursor:pointer}
 select:invalid{color:#a79685}
@@ -305,24 +331,34 @@ input:focus,select:focus{outline:none;border-color:var(--or);box-shadow:0 0 0 3p
 .accion{grid-column:1/-1;display:flex;align-items:center;gap:14px}
 
 /* Botones */
-.btn{height:48px;padding:0 18px;border-radius:12px;border:none;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,#f5873a,#d4501a);box-shadow:0 6px 14px rgba(212,80,26,.25)}
-.btn:hover{filter:brightness(1.05)}
+.btn,.btn-sec,button{position:relative;overflow:hidden}
+.btn{height:48px;padding:0 18px;border-radius:12px;border:none;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,#f5873a,#d4501a);box-shadow:0 6px 14px rgba(212,80,26,.25);transition:transform .15s,filter .2s,box-shadow .2s}
+.btn:hover{filter:brightness(1.06);box-shadow:0 10px 20px rgba(212,80,26,.33);transform:translateY(-1px)}
+.btn:active,.btn-sec:active{transform:scale(.95)}
 .btn.verde{background:linear-gradient(90deg,#3b9a86,#1d5f52);box-shadow:0 6px 14px rgba(29,95,82,.25)}
+.btn.verde:hover{box-shadow:0 10px 20px rgba(29,95,82,.33)}
 .btn.rojo{background:linear-gradient(90deg,#ef7a6b,#c0392b);box-shadow:0 6px 14px rgba(192,57,43,.25)}
 .btn i{font-size:18px}
-.btn .flecha{font-size:16px;opacity:.9}
-.btn-sec{height:auto;padding:7px 14px;border-radius:10px;background:#fff;color:#d4431a;border:1px solid #f4b9a4;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.btn .flecha{font-size:16px;opacity:.9;transition:transform .25s}
+.btn:hover .flecha{transform:translateX(4px)}
+.btn-sec{height:auto;padding:7px 14px;border-radius:10px;background:#fff;color:#d4431a;border:1px solid #f4b9a4;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;transition:transform .15s,background .2s}
 .btn-sec:hover{background:#fff4ee}
 .btn-sec.verde{color:#1f7a66;border-color:#9fd3c5}
 .btn-sec.verde:hover{background:#eef8f4}
 .btn-sec i{font-size:16px}
+
+/* Onda al presionar */
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:onda .6s ease-out forwards;pointer-events:none}
+.btn-sec .ripple{background:rgba(224,102,31,.22)}
+@keyframes onda{to{transform:scale(1);opacity:0}}
 
 /* Tablas en tarjeta */
 .tabla-wrap{border:1px solid var(--ln);border-radius:14px;overflow:hidden;margin-top:16px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-size:13px;color:#5a3a22;font-weight:500;padding:12px 16px;background:#fdf1e6;border-bottom:1px solid var(--ln)}
 th.verde-h{background:#e8f5f0;color:#1d5f52}
-td{padding:12px 16px;border-bottom:1px solid #f4ece3}
+td{padding:12px 16px;border-bottom:1px solid #f4ece3;transition:background .2s}
+tbody tr:hover td,table tr:hover td{background:#fffaf5}
 tr:last-child td{border-bottom:none}
 td.acc{text-align:right;width:130px}
 .res{background:var(--amb-f);color:var(--or-osc);border-radius:12px;padding:14px 16px;margin-top:14px;font-weight:500}
@@ -334,9 +370,27 @@ td.acc{text-align:right;width:130px}
 .total b{font-size:26px;font-weight:500}
 .total .tend{position:absolute;right:22px;top:50%;transform:translateY(-50%);font-size:34px;opacity:.85}
 .flash{background:var(--rj-f);color:var(--rj-t);padding:12px 16px;border-radius:12px;margin-bottom:14px}
+
+/* Respetar preferencias de movimiento reducido */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  #cursor-glow{display:none}
+}
 </style>
 </head>
 <body>
+
+<div class="fondo-anim" aria-hidden="true">
+  <span class="blob b1"></span>
+  <span class="blob b2"></span>
+  <span class="blob b3"></span>
+  <i class="ti ti-leaf ic i1"></i>
+  <i class="ti ti-egg ic i2"></i>
+  <i class="ti ti-feather ic i3"></i>
+  <i class="ti ti-plant-2 ic i4"></i>
+  <i class="ti ti-egg ic i5"></i>
+</div>
+<div id="cursor-glow" aria-hidden="true"></div>
 
 {% macro ico(nombre) %}<i class="ti ti-{{ nombre }}" aria-hidden="true"></i>{% endmacro %}
 
@@ -623,6 +677,40 @@ td.acc{text-align:right;width:130px}
   </div>
 {% endif %}
 </main>
+
+<script>
+// Halo que sigue el cursor (solo en computadora y si no se pide movimiento reducido)
+(function () {
+  var glow = document.getElementById('cursor-glow');
+  var reducir = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!glow || reducir || !window.matchMedia('(pointer: fine)').matches) return;
+  var mx = window.innerWidth / 2, my = window.innerHeight / 2, gx = mx, gy = my;
+  window.addEventListener('pointermove', function (e) {
+    mx = e.clientX; my = e.clientY; glow.style.opacity = '1';
+  });
+  (function bucle() {
+    gx += (mx - gx) * 0.12;
+    gy += (my - gy) * 0.12;
+    glow.style.transform = 'translate(' + (gx - 160) + 'px,' + (gy - 160) + 'px)';
+    requestAnimationFrame(bucle);
+  })();
+})();
+
+// Onda al presionar botones y enlaces del menú
+document.addEventListener('pointerdown', function (e) {
+  var b = e.target.closest('button, .btn, .btn-sec, nav a');
+  if (!b || b.disabled) return;
+  var r = document.createElement('span');
+  var rect = b.getBoundingClientRect();
+  var s = Math.max(rect.width, rect.height);
+  r.className = 'ripple';
+  r.style.width = r.style.height = s + 'px';
+  r.style.left = (e.clientX - rect.left - s / 2) + 'px';
+  r.style.top = (e.clientY - rect.top - s / 2) + 'px';
+  b.appendChild(r);
+  setTimeout(function () { r.remove(); }, 650);
+});
+</script>
 </body>
 </html>
 """
