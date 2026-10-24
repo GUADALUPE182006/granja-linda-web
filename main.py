@@ -30,10 +30,10 @@ CAMPOS = {
     "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
 
-SECCIONES = [("dashboard", "📊 Dashboard"), ("ventas", "💳 Ventas"), ("mermas", "📦 Mermas"),
-             ("costos", "🔧 Costos MOD/CIF"), ("fichas", "📋 Fichas técnicas"),
-             ("equilibrio", "⚖️ Punto de equilibrio"), ("reportes", "📈 Reportes"),
-             ("usuarios", "👤 Usuarios")]
+SECCIONES = [("dashboard", "Dashboard"), ("ventas", "Ventas"), ("mermas", "Mermas"),
+             ("costos", "Costos MOD/CIF"), ("fichas", "Fichas técnicas"),
+             ("equilibrio", "Punto de equilibrio"), ("reportes", "Reportes"),
+             ("usuarios", "Usuarios")]
 
 
 @app.template_filter("soles")
@@ -146,48 +146,62 @@ PLANTILLA = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>La Granja Linda - Gestión</title>
 <style>
-:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--verde-claro:#d6f0df;--rojo:#c0392b;--rojo-claro:#fde2e0;--gris:#f4f5f7;--muted:#6b7280}
+:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--texto:#222;--muted:#6b7280;
+  --borde:#e5e7eb;--gris:#f5f5f3;--blanco:#fff;--ambar:#FAEEDA;--ambar-t:#633806;--ambar-x:#412402;
+  --azul:#E6F1FB;--azul-t:#0C447C;--azul-x:#042C53;--rojo-f:#FCEBEB;--rojo-t:#791F1F;--rojo-x:#501313;
+  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--verde-barra:#639922;--rojo-barra:#E24B4A}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:#222;
-  display:grid;grid-template-columns:230px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
-header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:14px 22px}
-header h1{margin:0;font-size:20px}
-nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:6px;border-right:2px solid var(--madera-osc)}
-nav a{display:block;padding:10px 12px;border-radius:8px;text-decoration:none;color:#4a2a10;font-weight:700;font-size:14px}
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:var(--texto);font-size:14px}
+header{background:var(--naranja);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header h1{margin:0;font-size:16px;font-weight:500}
+header span{font-size:12px;opacity:1;color:#fbe3d2}
+nav{background:var(--madera);padding:8px 14px;display:flex;flex-wrap:wrap;gap:4px;border-bottom:0.5px solid var(--madera-osc)}
+nav a{padding:7px 12px;border-radius:8px;text-decoration:none;color:var(--madera-osc);color:#633806;font-size:13px}
 nav a:hover{background:#fff}
-nav a.activo{background:var(--naranja);color:#fff}
-main{min-width:0;padding:20px;max-width:1200px;width:100%}
-.card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px}
-.card h3{margin:0 0 10px;color:var(--naranja-osc)}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
-.kpi{background:#fff;border-top:4px solid var(--naranja);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.kpi small{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px}
-.kpi b{display:block;font-size:22px;margin-top:6px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+nav a.activo{background:#fff;color:var(--naranja-osc);font-weight:500}
+main{padding:20px;max-width:1100px;margin:auto}
+h2.titulo{font-size:18px;font-weight:500;margin:0 0 14px;color:var(--naranja-osc)}
+.card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h3{margin:0 0 10px;font-size:15px;font-weight:500}
+.hero{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:20px 18px;margin-bottom:12px}
+.hero small{color:var(--muted);font-size:12px}
+.hero b{display:block;font-size:32px;font-weight:500;margin:4px 0}
+.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.bloque{border-radius:12px;padding:14px}
+.bloque small{font-size:12px}
+.bloque b{display:block;font-size:20px;font-weight:500;margin:6px 0 4px}
+.bloque span{font-size:12px}
+.ambar{background:var(--ambar);color:var(--ambar-t)}.ambar b{color:var(--ambar-x)}
+.azul{background:var(--azul);color:var(--azul-t)}.azul b{color:var(--azul-x)}
+.rojo{background:var(--rojo-f);color:var(--rojo-t)}.rojo b{color:var(--rojo-x)}
+.verde{background:var(--verde-f);color:var(--verde-t)}.verde b{color:var(--verde-x)}
+.fila-plato{display:grid;grid-template-columns:130px 1fr 60px;align-items:center;gap:10px;font-size:13px;padding:6px 0}
+.barra{height:8px;background:var(--gris);border-radius:4px;overflow:hidden}
+.barra div{height:100%;border-radius:4px}
+.filas div{display:flex;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid var(--borde);font-size:13px}
+.filas div:last-child{border-bottom:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
 form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
-form.reg label{font-size:12px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-input,select{padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px}
-button{background:var(--naranja);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
-button:hover{background:var(--naranja-osc)}
-button.sec{background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);padding:4px 8px;font-size:12px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th{text-align:left;font-size:12px;color:var(--muted);text-transform:uppercase;padding:8px 6px;border-bottom:2px solid #eee}
-td{padding:9px 6px;border-bottom:1px solid #f0f0f0}
-tr.bueno td{background:var(--verde-claro)}
-tr.malo td{background:var(--rojo-claro)}
-tr.total td{font-weight:800;border-top:2px solid #ddd}
-.flash{background:var(--rojo-claro);color:var(--rojo);padding:10px;border-radius:8px;margin-bottom:14px;font-weight:700}
-.res{background:var(--madera);border-radius:10px;padding:12px;margin-top:10px;font-weight:700}
-.nota{color:var(--muted);font-size:12px}
-@media(max-width:800px){
-  body{grid-template-columns:1fr}
-  nav{flex-direction:row;flex-wrap:wrap;border-right:none}
-  .grid2{grid-template-columns:1fr}
-}
+form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input,select{padding:8px;border:0.5px solid #bbb;border-radius:8px;font-size:14px;background:#fff}
+button{background:#fff;color:var(--naranja-osc);border:0.5px solid var(--naranja);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+button:hover{background:var(--madera)}
+button.sec{padding:4px 8px;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:8px 6px;border-bottom:0.5px solid var(--borde)}
+td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
+tr.total td{font-weight:500}
+.flash{background:var(--rojo-f);color:var(--rojo-t);padding:10px;border-radius:8px;margin-bottom:14px}
+.res{background:var(--ambar);color:var(--ambar-x);border-radius:10px;padding:12px;margin-top:10px}
+.nota{color:var(--muted);font-size:12px;margin:8px 0 0}
 </style>
 </head>
 <body>
-<header><h1>🐓 LA GRANJA LINDA · Gestión de costos</h1></header>
+<header>
+  <h1>La Granja Linda · Gestión de costos</h1>
+  <span>Octubre 2026 · Nuevo Chimbote</span>
+</header>
 
 <nav>
   {% for id, nombre in secciones %}
@@ -233,25 +247,36 @@ tr.total td{font-weight:800;border-top:2px solid #ddd}
 {% endmacro %}
 
 {% if tab == 'dashboard' %}
-  <div class="kpis">
-    <div class="kpi"><small>Ingresos totales</small><b>{{ ind.ingresos|soles }}</b></div>
-    <div class="kpi"><small>Utilidad estimada</small><b>{{ ind.utilidad|soles }}</b></div>
-    <div class="kpi"><small>% mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b></div>
-    <div class="kpi"><small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b></div>
-    <div class="kpi"><small>Pagos digitales</small><b>{{ '%.1f'|format(ind.pct_digital) }}%</b></div>
+  <div class="hero">
+    <small>Utilidad estimada del periodo</small>
+    <b>{{ ind.utilidad|soles }}</b>
+    <small>Calculada con las ventas, mermas y costos fijos registrados</small>
   </div>
+
+  <div class="bloques">
+    <div class="bloque ambar"><small>Ventas totales</small><b>{{ ind.ingresos|soles }}</b><span>Ingresos registrados</span></div>
+    <div class="bloque azul"><small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b><span>En ventas mensuales</span></div>
+    <div class="bloque {{ 'rojo' if ind.pct_mermas > 10 else 'verde' }}"><small>Mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b><span>Objetivo menor a 10%</span></div>
+    <div class="bloque verde"><small>Pagos digitales</small><b>{{ '%.1f'|format(ind.pct_digital) }}%</b><span>Yape, Plin y POS</span></div>
+  </div>
+
   <div class="card">
-    <h3>Top platos por rentabilidad</h3>
-    <table>
-      <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Ganancia</th><th>Margen</th></tr>
-      {% for p in platos %}
-      <tr class="{{ 'bueno' if p['margen'] >= 35 else 'malo' }}">
-        <td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td>
-        <td>{{ (p['precio']-p['costo'])|soles }}</td><td>{{ p['margen'] }}%</td>
-      </tr>
-      {% endfor %}
-    </table>
+    <h3>Platos por margen</h3>
+    {% for p in platos %}
+    <div class="fila-plato">
+      <span>{{ p['nombre'] }}</span>
+      <div class="barra"><div style="width:{{ p['margen'] }}%;background:{{ '#639922' if p['margen'] >= 35 else '#E24B4A' }}"></div></div>
+      <span>{{ p['margen'] }}%</span>
+    </div>
+    {% endfor %}
     <p class="nota">Verde: margen de 35% o más. Rojo: menos de 35%.</p>
+  </div>
+
+  <div class="card filas">
+    <h3>Detalle por plato</h3>
+    {% for p in platos %}
+    <div><span>{{ p['nombre'] }}</span><span>Costo {{ p['costo']|soles }} · Precio {{ p['precio']|soles }} · Ganancia {{ (p['precio']-p['costo'])|soles }}</span></div>
+    {% endfor %}
   </div>
 {% endif %}
 
@@ -317,9 +342,7 @@ tr.total td{font-weight:800;border-top:2px solid #ddd}
     <table>
       <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Margen</th></tr>
       {% for p in platos %}
-      <tr class="{{ 'bueno' if p['margen'] >= 35 else 'malo' }}">
-        <td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td><td>{{ p['margen'] }}%</td>
-      </tr>
+      <tr><td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td><td>{{ p['margen'] }}%</td></tr>
       {% endfor %}
     </table>
   </div>
@@ -342,7 +365,7 @@ tr.total td{font-weight:800;border-top:2px solid #ddd}
       {% else %}
         <div class="res">{{ '{:,}'.format(eq.pe) }} unidades al mes ({{ eq.pe_ventas|soles }} en ventas)</div>
         <p>Margen de contribución: {{ eq.mc|soles }} por unidad</p>
-        <p><b style="color:{{ 'green' if eq.holg >= 0 else 'red' }}">Holgura sobre la meta: {{ '%+.1f'|format(eq.holg) }}%</b></p>
+        <p>Holgura sobre la meta: <b style="color:{{ '#27500A' if eq.holg >= 0 else '#791F1F' }}">{{ '%+.1f'|format(eq.holg) }}%</b></p>
       {% endif %}
     {% endif %}
     <p class="nota">Punto de equilibrio = Costos fijos / (Precio − Costo variable unitario)</p>
@@ -351,7 +374,7 @@ tr.total td{font-weight:800;border-top:2px solid #ddd}
 
 {% if tab == 'reportes' %}
   <div class="card">
-    <h3>Resultados mensuales <a href="{{ url_for('exportar') }}" style="float:right;font-size:13px">⬇ Exportar a CSV</a></h3>
+    <h3>Resultados mensuales <a href="{{ url_for('exportar') }}" style="float:right;font-size:12px">Exportar a CSV</a></h3>
     <table>
       <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
       {% for r in reportes %}
