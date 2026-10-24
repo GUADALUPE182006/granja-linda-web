@@ -35,6 +35,16 @@ SECCIONES = [("dashboard", "Dashboard"), ("ventas", "Ventas"), ("mermas", "Merma
              ("equilibrio", "Punto de equilibrio"), ("reportes", "Reportes"),
              ("usuarios", "Usuarios")]
 
+# Logo de respaldo (granero). Si existe static/logo.png, se usa ese archivo en su lugar.
+LOGO_SVG = """<svg viewBox="0 0 64 64" aria-hidden="true">
+  <polygon points="6,28 32,6 58,28" fill="currentColor"/>
+  <rect x="12" y="28" width="40" height="28" rx="2" fill="currentColor"/>
+  <rect x="27" y="38" width="10" height="18" fill="var(--logo-puerta)"/>
+  <rect x="16" y="34" width="7" height="7" fill="var(--logo-puerta)"/>
+  <rect x="41" y="34" width="7" height="7" fill="var(--logo-puerta)"/>
+  <circle cx="32" cy="18" r="3" fill="var(--logo-puerta)"/>
+</svg>"""
+
 
 @app.template_filter("soles")
 def soles(n):
@@ -137,6 +147,12 @@ def num_arg(nombre, defecto):
         return None
 
 
+def logo_archivo():
+    """Devuelve la ruta del logo real si existe en static/logo.png."""
+    ruta = os.path.join(app.root_path, "static", "logo.png")
+    return "/static/logo.png" if os.path.exists(ruta) else None
+
+
 # ---------- Plantilla ----------
 PLANTILLA = """
 <!DOCTYPE html>
@@ -149,13 +165,17 @@ PLANTILLA = """
 :root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--texto:#222;--muted:#6b7280;
   --borde:#e5e7eb;--gris:#f5f5f3;--blanco:#fff;--ambar:#FAEEDA;--ambar-t:#633806;--ambar-x:#412402;
   --azul:#E6F1FB;--azul-t:#0C447C;--azul-x:#042C53;--rojo-f:#FCEBEB;--rojo-t:#791F1F;--rojo-x:#501313;
-  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--gris-barra:#eeeeea}
+  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--gris-barra:#eeeeea;--logo-puerta:#d9631e}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:var(--texto);font-size:14px;
   display:grid;grid-template-columns:230px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
-header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-header h1{margin:0;font-size:16px;font-weight:500}
-header span{font-size:12px;color:#fbe3d2}
+header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:10px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.marca{display:flex;align-items:center;gap:12px}
+.marca svg,.marca .logo-img{width:46px;height:46px;color:#fff;--logo-puerta:#d9631e}
+.marca .logo-img{object-fit:contain;background:#fff;border-radius:8px;padding:3px}
+.marca h1{margin:0;font-size:17px;font-weight:500;letter-spacing:.3px}
+.marca span{font-size:11px;color:#fbe3d2;letter-spacing:1.5px;text-transform:uppercase}
+header .fecha{font-size:12px;color:#fbe3d2}
 nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:4px;border-right:0.5px solid var(--madera-osc)}
 nav a{display:block;padding:10px 12px;border-radius:8px;text-decoration:none;color:#633806;font-size:13px}
 nav a:hover{background:#fff}
@@ -198,8 +218,15 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 </head>
 <body>
 <header>
-  <h1>La Granja Linda · Gestión de costos</h1>
-  <span>Octubre 2026 · Nuevo Chimbote</span>
+  <div class="marca">
+    {% if logo_img %}<img class="logo-img" src="{{ logo_img }}" alt="Logo La Granja Linda">
+    {% else %}{{ logo_svg|safe }}{% endif %}
+    <div>
+      <h1>La Granja Linda</h1>
+      <span>Pollería · Gestión de costos</span>
+    </div>
+  </div>
+  <span class="fecha">Octubre 2026 · Nuevo Chimbote</span>
 </header>
 
 <nav>
@@ -469,6 +496,7 @@ def index():
 
     return render_template_string(
         PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
+        logo_img=logo_archivo(), logo_svg=LOGO_SVG,
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
