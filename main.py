@@ -44,8 +44,7 @@ ICONOS = {"rol": "user", "sueldo": "coin", "concepto": "file-text", "monto": "co
 SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
              ("mermas", "box", "Mermas"), ("costos", "calculator", "Costos MOD/CIF"),
              ("fichas", "file-text", "Fichas técnicas"), ("equilibrio", "scale", "Punto de equilibrio"),
-             ("reportes", "report", "Reportes"), ("usuarios", "users", "Usuarios"),
-             ("configuracion", "palette", "Configuración")]
+             ("reportes", "report", "Reportes"), ("usuarios", "users", "Usuarios")]
 
 # ---------- Colores de la aplicación ----------
 COLORES_DEFECTO = {"principal": "#e0661f", "secundario": "#2a7f6e", "acento": "#2e6aa8"}
@@ -297,6 +296,9 @@ header{grid-column:1/-1;background:linear-gradient(90deg,var(--p),var(--p-osc));
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fff;opacity:.85;text-transform:uppercase;margin-top:2px}
 .derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fff}
 .avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px}
+.engranaje{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.22);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;text-decoration:none;transition:transform .3s,background .2s}
+.engranaje:hover{background:rgba(255,255,255,.35);transform:rotate(60deg)}
+.engranaje.activo{background:#fff;color:var(--p)}
 nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;z-index:2;background:linear-gradient(180deg,var(--p-cl),var(--p-cl2));padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--p-cl2)}
 nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--p-osc);font-size:14px;transition:background .2s,transform .15s}
 nav a i{font-size:20px}
@@ -539,6 +541,7 @@ td.acc{text-align:right;width:130px}
   </div>
   <div class="derecha">
     <span>{{ ico('calendar') }} Octubre 2026 · Nuevo Chimbote</span>
+    <a href="{{ url_for('index', tab='configuracion') }}" class="engranaje{{ ' activo' if tab=='configuracion' else '' }}" title="Configuración" aria-label="Configuración"><i class="ti ti-settings" aria-hidden="true"></i></a>
     <div class="avatar">{{ ico('user') }}</div>
   </div>
 </header>
@@ -830,7 +833,7 @@ td.acc{text-align:right;width:130px}
 
 // Onda al presionar botones y enlaces del menú
 document.addEventListener('pointerdown', function (e) {
-  var b = e.target.closest('button, .btn, .btn-sec, nav a');
+  var b = e.target.closest('button, .btn, .btn-sec, nav a, .engranaje');
   if (!b || b.disabled) return;
   var r = document.createElement('span');
   var rect = b.getBoundingClientRect();
