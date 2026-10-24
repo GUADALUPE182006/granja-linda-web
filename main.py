@@ -30,10 +30,11 @@ CAMPOS = {
     "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
 
-SECCIONES = [("dashboard", "Dashboard"), ("ventas", "Ventas"), ("mermas", "Mermas"),
-             ("costos", "Costos MOD/CIF"), ("fichas", "Fichas técnicas"),
-             ("equilibrio", "Punto de equilibrio"), ("reportes", "Reportes"),
-             ("usuarios", "Usuarios")]
+# (id, ícono, nombre)
+SECCIONES = [("dashboard", "📊", "Dashboard"), ("ventas", "💳", "Ventas"),
+             ("mermas", "📦", "Mermas"), ("costos", "🔧", "Costos MOD/CIF"),
+             ("fichas", "📋", "Fichas técnicas"), ("equilibrio", "⚖️", "Punto de equilibrio"),
+             ("reportes", "📈", "Reportes"), ("usuarios", "👤", "Usuarios")]
 
 # Logo de respaldo (granero). Si existe static/logo.png, se usa ese archivo en su lugar.
 LOGO_SVG = """<svg viewBox="0 0 64 64" aria-hidden="true">
@@ -177,9 +178,10 @@ header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:10px 22px;d
 .marca span{font-size:11px;color:#fbe3d2;letter-spacing:1.5px;text-transform:uppercase}
 header .fecha{font-size:12px;color:#fbe3d2}
 nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:4px;border-right:0.5px solid var(--madera-osc)}
-nav a{display:block;padding:10px 12px;border-radius:8px;text-decoration:none;color:#633806;font-size:13px}
+nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;text-decoration:none;color:#633806;font-size:13px}
 nav a:hover{background:#fff}
 nav a.activo{background:#fff;color:var(--naranja-osc);font-weight:500}
+nav a .ico{width:22px;text-align:center;font-size:15px;line-height:1}
 main{min-width:0;padding:20px;max-width:1100px;width:100%}
 .card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:16px}
 .card h3{margin:0 0 10px;font-size:15px;font-weight:500}
@@ -230,8 +232,8 @@ td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
 </header>
 
 <nav>
-  {% for id, nombre in secciones %}
-    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}">{{ nombre }}</a>
+  {% for id, icono, nombre in secciones %}
+    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><span class="ico">{{ icono }}</span>{{ nombre }}</a>
   {% endfor %}
 </nav>
 
