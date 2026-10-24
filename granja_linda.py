@@ -1,3 +1,4 @@
+from estilos import aplicar_estilos, configurar_tags
 """
 La Granja Linda - Sistema de gestión de costos, mermas y presupuestos.
 Aplicación de escritorio: Python + Tkinter + SQLite.
