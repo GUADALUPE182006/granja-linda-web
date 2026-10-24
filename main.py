@@ -146,22 +146,17 @@ PLANTILLA = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>La Granja Linda - Gestión</title>
 <style>
-:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--verde-claro:#d6f0df;--rojo:#c0392b;--rojo-claro:#fde2e0;--gris:#f4f5f7;--muted:#6b7280}
+:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--verde-claro:#d6f0df;--rojo:#c0392b;--rojo-claro:#fde2e0;--gris:#f4f5f7;--muted:#6b7280}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:#222}
-header{background:var(--naranja);color:#fff;padding:14px 22px}
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:#222;
+  display:grid;grid-template-columns:230px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:14px 22px}
 header h1{margin:0;font-size:20px}
-nav{background:var(--madera);padding:8px 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-nav a{padding:8px 12px;border-radius:8px;text-decoration:none;color:#4a2a10;font-weight:700;font-size:14px}
+nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:6px;border-right:2px solid var(--madera-osc)}
+nav a{display:block;padding:10px 12px;border-radius:8px;text-decoration:none;color:#4a2a10;font-weight:700;font-size:14px}
+nav a:hover{background:#fff}
 nav a.activo{background:var(--naranja);color:#fff}
-.dropdown{position:relative;display:inline-block}
-.dropbtn{padding:8px 12px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja)}
-.dropbtn:hover{background:var(--madera)}
-.dropdown-menu{display:none;position:absolute;top:100%;left:0;min-width:230px;background:#fff;border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,.18);padding:6px;z-index:100}
-.dropdown:hover .dropdown-menu,.dropdown:focus-within .dropdown-menu{display:block}
-.dropdown-menu a{display:block;padding:9px 12px;border-radius:8px;color:#4a2a10;text-decoration:none;font-weight:700;font-size:14px}
-.dropdown-menu a:hover{background:var(--madera)}
-main{padding:20px;max-width:1200px;margin:auto}
+main{min-width:0;padding:20px;max-width:1200px;width:100%}
 .card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px}
 .card h3{margin:0 0 10px;color:var(--naranja-osc)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
@@ -169,7 +164,6 @@ main{padding:20px;max-width:1200px;margin:auto}
 .kpi small{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px}
 .kpi b{display:block;font-size:22px;margin-top:6px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}}
 form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
 form.reg label{font-size:12px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 input,select{padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px}
@@ -185,20 +179,17 @@ tr.total td{font-weight:800;border-top:2px solid #ddd}
 .flash{background:var(--rojo-claro);color:var(--rojo);padding:10px;border-radius:8px;margin-bottom:14px;font-weight:700}
 .res{background:var(--madera);border-radius:10px;padding:12px;margin-top:10px;font-weight:700}
 .nota{color:var(--muted);font-size:12px}
+@media(max-width:800px){
+  body{grid-template-columns:1fr}
+  nav{flex-direction:row;flex-wrap:wrap;border-right:none}
+  .grid2{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 <header><h1>🐓 LA GRANJA LINDA · Gestión de costos</h1></header>
 
 <nav>
-  <div class="dropdown">
-    <button type="button" class="dropbtn">☰ Menú ▾</button>
-    <div class="dropdown-menu">
-      {% for id, nombre in secciones %}
-        <a href="{{ url_for('index', tab=id) }}">{{ nombre }}</a>
-      {% endfor %}
-    </div>
-  </div>
   {% for id, nombre in secciones %}
     <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}">{{ nombre }}</a>
   {% endfor %}
