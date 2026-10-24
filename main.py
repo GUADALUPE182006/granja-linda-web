@@ -35,13 +35,11 @@ CAMPOS = {
     "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
 
-# Ícono de cada campo (Tabler, línea)
 ICONOS = {"rol": "user", "sueldo": "coin", "concepto": "file-text", "monto": "coin",
           "fecha": "calendar", "plato": "tools-kitchen-2", "cantidad": "hash",
           "canal": "truck-delivery", "pago": "credit-card", "insumo": "carrot",
           "costo": "coin", "causa": "alert-triangle", "nombre": "user"}
 
-# (id, ícono Tabler, nombre)
 SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
              ("mermas", "box", "Mermas"), ("costos", "calculator", "Costos MOD/CIF"),
              ("fichas", "file-text", "Fichas técnicas"), ("equilibrio", "scale", "Punto de equilibrio"),
@@ -207,12 +205,13 @@ PLANTILLA = """
 <title>La Granja Linda - Gestión</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
-:root{--naranja:#e0661f;--naranja-osc:#b9531a;--crema:#fbf7f1;--texto:#2a1a0e;--muted:#7d6b5d;--borde:#f0e4d4;
+:root{--or:#e0661f;--or-osc:#b9531a;--tx:#2a1a0e;--mu:#7d6b5d;--ln:#efe3d5;
+  --verde:#2a7f6e;--verde-osc:#1d5f52;--verde-cl:#e7f4ef;
   --amb-f:#fdf1e3;--amb-i:#f8e0c0;--az-f:#ebf3fc;--az-i:#d4e6f8;--az-t:#2e6aa8;
-  --vd-f:#eef7ea;--vd-i:#d7eec4;--vd-t:#3f7d21;--verde-btn:#3f7d3a;--am-f:#fdf9e6;--am-i:#f8ebb8;--am-t:#8a6200;
+  --vd-f:#eef7ea;--vd-i:#d7eec4;--vd-t:#3f7d21;--am-f:#fdf9e6;--am-i:#f8ebb8;--am-t:#8a6200;
   --rj-f:#fdeeee;--rj-i:#f8d2d2;--rj-t:#a8322d;--barra-v:#7cc05a;--barra-r:#ee6e6e}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--texto);font-size:14px;
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:#fbf7f2;color:var(--tx);font-size:14px;
   display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
 header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:#fff;padding:12px 24px;
   display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
@@ -223,105 +222,176 @@ header{grid-column:1/-1;background:linear-gradient(90deg,#e6772b,#d25f1c);color:
 .marca h1{margin:0;font-size:21px;font-weight:500}
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fde3cc;text-transform:uppercase;margin-top:2px}
 .derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fde3cc}
-.avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--naranja);display:flex;align-items:center;justify-content:center;font-size:20px}
+.avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--or);display:flex;align-items:center;justify-content:center;font-size:20px}
 nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:linear-gradient(180deg,#fcf1e2,#f8e4c8);padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid #f1d7b3}
-nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--naranja-osc);font-size:14px}
+nav a{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;text-decoration:none;color:var(--or-osc);font-size:14px}
 nav a i{font-size:20px}
 nav a:hover{background:rgba(255,255,255,.7)}
-nav a.activo{background:var(--naranja);color:#fff;font-weight:500}
-.decor-menu{margin-top:auto;width:100%;opacity:.95}
+nav a.activo{background:var(--or);color:#fff;font-weight:500}
+.decor-menu{margin-top:auto;width:100%}
 .decor-menu svg{width:100%;height:auto;display:block}
 main{min-width:0;padding:22px 26px;max-width:1180px;width:100%}
-.card{background:#fff;border:1px solid var(--borde);border-radius:16px;padding:18px;margin-bottom:16px}
-.cabecera{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-.circ{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.circ.naranja{background:var(--amb-i);color:var(--naranja-osc)}
-.circ.azul{background:var(--az-i);color:var(--az-t)}
-.circ.verde{background:var(--vd-i);color:var(--vd-t)}
-.circ.rojo{background:var(--rj-i);color:var(--rj-t)}
-.cabecera h3{margin:0;font-size:18px;font-weight:500;color:var(--naranja-osc)}
-.cabecera .aux{margin-left:auto;font-size:13px;color:var(--naranja-osc);text-decoration:none}
-.hero{position:relative;overflow:hidden;background:#fff;border:1px solid var(--borde);border-radius:16px;padding:24px 26px;
-  display:flex;align-items:center;gap:18px;margin-bottom:16px;min-height:170px}
+
+/* Tarjetas con banda de encabezado */
+.card{background:#fff;border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 2px 14px rgba(120,60,20,.07);overflow:hidden}
+.banner{display:flex;align-items:center;gap:16px;padding:18px 20px;margin:-18px -18px 18px;position:relative;overflow:hidden}
+.banner.naranja{background:linear-gradient(90deg,#fdeadb,#fbd3b1)}
+.banner.verde{background:linear-gradient(90deg,#e4f3ee,#c4e6da)}
+.banner.azul{background:linear-gradient(90deg,#e6f0fb,#c9dff5)}
+.banner.rojo{background:linear-gradient(90deg,#fde7e4,#f8c9c2)}
+.banner.gris{background:linear-gradient(90deg,#f5f1ec,#e8dfd4)}
+.ic-circ{width:56px;height:56px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;box-shadow:0 6px 14px rgba(0,0,0,.12)}
+.naranja .ic-circ{background:linear-gradient(135deg,#f5873a,#d4501a)}
+.verde .ic-circ{background:linear-gradient(135deg,#3b9a86,#1d5f52)}
+.azul .ic-circ{background:linear-gradient(135deg,#4a8fd6,#2e6aa8)}
+.rojo .ic-circ{background:linear-gradient(135deg,#ef7a6b,#c0392b)}
+.gris .ic-circ{background:linear-gradient(135deg,#9a8a7a,#6b5a4a)}
+.banner h3{margin:0;font-size:19px;font-weight:600}
+.banner p{margin:4px 0 0;font-size:13px}
+.naranja h3{color:#9a3412}.naranja p{color:#7a4a30}
+.verde h3{color:#14524a}.verde p{color:#2e5e56}
+.azul h3{color:#1f4f85}.azul p{color:#3d5f80}
+.rojo h3{color:#8a2a20}.rojo p{color:#7a3a33}
+.gris h3{color:#4a3a2a}.gris p{color:#6b5a4a}
+.banner .deco{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:44px;opacity:.35}
+.banner .deco svg{width:90px;height:90px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
+
+/* Panel principal */
+.hero{position:relative;overflow:hidden;background:#fff;border-radius:18px;padding:24px 26px;display:flex;align-items:center;gap:18px;margin-bottom:18px;min-height:170px;box-shadow:0 2px 14px rgba(120,60,20,.07)}
 .hero .txt{position:relative;z-index:2;display:flex;align-items:center;gap:18px}
-.hero small{color:var(--muted);font-size:14px;display:block}
-.hero b{display:block;font-size:40px;font-weight:500;color:var(--texto);margin:4px 0}
-.hero .pie{font-size:13px;color:var(--muted)}
+.hero small{color:var(--mu);font-size:14px;display:block}
+.hero b{display:block;font-size:40px;font-weight:500;color:var(--tx);margin:4px 0}
+.hero .pie{font-size:13px;color:var(--mu)}
 .hero .ola{position:absolute;left:0;right:0;bottom:0;height:110px;z-index:0}
 .hero .ola svg{width:100%;height:100%}
 .hero .gallo{position:absolute;right:20px;top:4px;width:230px;height:200px;z-index:1}
 .hero .gallo svg{width:100%;height:100%}
-.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:16px}
-.bloque{border-radius:16px;padding:18px;border:1px solid transparent}
+.bloques{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.bloque{border-radius:18px;padding:18px;border:1px solid transparent}
 .bloque .top{display:flex;justify-content:space-between;align-items:flex-start}
-.bloque .circ{width:44px;height:44px}
+.bloque .circ{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px}
 .bloque .tend{font-size:20px;opacity:.9}
 .bloque small{font-size:14px;display:block;margin-top:14px}
-.bloque b{display:block;font-size:26px;font-weight:500;margin:4px 0 2px;color:var(--texto)}
-.bloque span{font-size:12px;color:var(--muted)}
-.b-ambar{background:var(--amb-f);border-color:#f7e2c6}.b-ambar .tend{color:var(--naranja)}
-.b-azul{background:var(--az-f);border-color:#d6e6f7}.b-azul .tend{color:var(--az-t)}
-.b-verde{background:var(--vd-f);border-color:#dcefc9}.b-verde .tend{color:var(--vd-t)}
-.b-rojo{background:var(--rj-f);border-color:#f7d3d3}.b-rojo .tend{color:var(--rj-t)}
+.bloque b{display:block;font-size:26px;font-weight:500;margin:4px 0 2px;color:var(--tx)}
+.bloque span{font-size:12px;color:var(--mu)}
+.b-ambar{background:var(--amb-f);border-color:#f7e2c6}.b-ambar .tend{color:var(--or)}.b-ambar .circ{background:var(--amb-i);color:var(--or-osc)}
+.b-azul{background:var(--az-f);border-color:#d6e6f7}.b-azul .tend{color:var(--az-t)}.b-azul .circ{background:var(--az-i);color:var(--az-t)}
+.b-verde{background:var(--vd-f);border-color:#dcefc9}.b-verde .tend{color:var(--vd-t)}.b-verde .circ{background:var(--vd-i);color:var(--vd-t)}
+.b-rojo{background:var(--rj-f);border-color:#f7d3d3}.b-rojo .tend{color:var(--rj-t)}.b-rojo .circ{background:var(--rj-i);color:var(--rj-t)}
 .b-amarillo{background:var(--am-f);border-color:#f5e8b5}.b-amarillo .circ{background:var(--am-i);color:var(--am-t)}
 .fila-plato{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:14px;font-size:14px;padding:10px 0}
 .barra{height:12px;background:#f3eee8;border-radius:8px;overflow:hidden}
 .barra div{height:100%;border-radius:8px}
-.nota{color:var(--muted);font-size:12px;margin:10px 0 0}
-.filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--borde);font-size:13px}
+.nota{color:var(--mu);font-size:12px;margin:10px 0 0}
+.filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--ln);font-size:13px}
 .filas div:last-child{border-bottom:none}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}}
 
 /* Formularios */
-form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 18px;margin-bottom:14px;align-items:end}
-.campo{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--texto);font-weight:500}
+form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 18px;margin-bottom:6px;align-items:end}
+.campo{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--tx);font-weight:500}
 .campo .lbl{display:flex;align-items:center;gap:8px}
-.campo .lbl i{font-size:17px;color:var(--naranja)}
-.verde .campo .lbl i{color:var(--verde-btn)}
+.campo .lbl i{font-size:17px;color:var(--or)}
+.verde .campo .lbl i{color:var(--verde)}
 .caja{position:relative;display:block}
 .caja.sel::after{content:"";position:absolute;right:18px;top:45%;width:8px;height:8px;border-right:2px solid #9a8a7a;border-bottom:2px solid #9a8a7a;transform:rotate(45deg);pointer-events:none}
-input,select{height:48px;width:100%;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;background:#fff;color:var(--texto);font-family:inherit}
+input,select{height:48px;width:100%;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;background:#fff;color:var(--tx);font-family:inherit}
 input::placeholder{color:#a79685}
 select{appearance:none;-webkit-appearance:none;padding-right:38px;cursor:pointer}
 select:invalid{color:#a79685}
-input:focus,select:focus{outline:none;border-color:var(--naranja);box-shadow:0 0 0 3px rgba(224,102,31,.15)}
-.verde input:focus,.verde select:focus{border-color:var(--verde-btn);box-shadow:0 0 0 3px rgba(63,125,58,.15)}
+input:focus,select:focus{outline:none;border-color:var(--or);box-shadow:0 0 0 3px rgba(224,102,31,.15)}
+.verde input:focus,.verde select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(42,127,110,.15)}
 .accion{grid-column:1/-1;display:flex;align-items:center;gap:14px}
-button{height:48px;padding:0 22px;border-radius:12px;border:none;background:var(--naranja);color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px}
-button:hover{background:var(--naranja-osc)}
-button.verde{background:var(--verde-btn)}
-button.verde:hover{background:#2f6b2c}
-button i{font-size:18px}
 
-/* Botón eliminar */
-button.sec{height:auto;padding:7px 14px;border-radius:10px;background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);font-size:13px;font-weight:500}
-button.sec:hover{background:var(--amb-f)}
-button.sec.verde{color:#2f6b2c;border-color:var(--verde-btn);background:#fff}
-button.sec.verde:hover{background:var(--vd-f)}
-button.sec i{font-size:16px}
+/* Botones */
+.btn{height:48px;padding:0 18px;border-radius:12px;border:none;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,#f5873a,#d4501a);box-shadow:0 6px 14px rgba(212,80,26,.25)}
+.btn:hover{filter:brightness(1.05)}
+.btn.verde{background:linear-gradient(90deg,#3b9a86,#1d5f52);box-shadow:0 6px 14px rgba(29,95,82,.25)}
+.btn.rojo{background:linear-gradient(90deg,#ef7a6b,#c0392b);box-shadow:0 6px 14px rgba(192,57,43,.25)}
+.btn i{font-size:18px}
+.btn .flecha{font-size:16px;opacity:.9}
+.btn-sec{height:auto;padding:7px 14px;border-radius:10px;background:#fff;color:#d4431a;border:1px solid #f4b9a4;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.btn-sec:hover{background:#fff4ee}
+.btn-sec.verde{color:#1f7a66;border-color:#9fd3c5}
+.btn-sec.verde:hover{background:#eef8f4}
+.btn-sec i{font-size:16px}
 
-/* Tablas tipo tarjeta */
-table{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:14px}
-th{text-align:left;font-size:13px;color:var(--texto);font-weight:500;padding:12px 14px;background:var(--amb-f);border:none}
-th:first-child{border-radius:12px 0 0 12px}
-th:last-child{border-radius:0 12px 12px 0}
-td{padding:14px;background:#fff;border-top:1px solid #f1e6d8;border-bottom:1px solid #f1e6d8}
-td:first-child{border-left:1px solid #f1e6d8;border-radius:12px 0 0 12px}
-td:last-child{border-right:1px solid #f1e6d8;border-radius:0 12px 12px 0}
-table.verde th{background:var(--vd-f)}
-table.verde td{border-color:#e4f0dc}
-.res{background:var(--amb-f);color:var(--naranja-osc);border-radius:12px;padding:14px 16px;margin-top:12px;font-weight:500}
-.total{display:flex;align-items:center;gap:14px;background:var(--amb-f);border-radius:14px;padding:16px 18px;margin-top:14px;font-size:14px;color:var(--texto)}
-.total b{font-size:22px;font-weight:500;display:block;color:var(--naranja-osc)}
-.total.verde{background:var(--vd-f)}
-.total.verde b{color:var(--vd-t)}
-.flash{background:var(--rj-f);color:var(--rj-t);padding:11px 14px;border-radius:12px;margin-bottom:14px}
+/* Tablas en tarjeta */
+.tabla-wrap{border:1px solid var(--ln);border-radius:14px;overflow:hidden;margin-top:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:13px;color:#5a3a22;font-weight:500;padding:12px 16px;background:#fdf1e6;border-bottom:1px solid var(--ln)}
+th.verde-h{background:#e8f5f0;color:#1d5f52}
+td{padding:12px 16px;border-bottom:1px solid #f4ece3}
+tr:last-child td{border-bottom:none}
+td.acc{text-align:right;width:130px}
+.res{background:var(--amb-f);color:var(--or-osc);border-radius:12px;padding:14px 16px;margin-top:14px;font-weight:500}
+.total{display:flex;align-items:center;gap:16px;border-radius:16px;padding:18px 20px;margin-top:16px;color:#fff;position:relative;overflow:hidden}
+.total.naranja{background:linear-gradient(90deg,#f5873a,#d4501a)}
+.total.verde{background:linear-gradient(90deg,#2a7f6e,#15453d)}
+.total .circ{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:24px}
+.total small{font-size:13px;opacity:.9;display:block}
+.total b{font-size:26px;font-weight:500}
+.total .tend{position:absolute;right:22px;top:50%;transform:translateY(-50%);font-size:34px;opacity:.85}
+.flash{background:var(--rj-f);color:var(--rj-t);padding:12px 16px;border-radius:12px;margin-bottom:14px}
 </style>
 </head>
 <body>
 
 {% macro ico(nombre) %}<i class="ti ti-{{ nombre }}" aria-hidden="true"></i>{% endmacro %}
+
+{% macro banner(icono, titulo, sub='', color='naranja') %}
+  <div class="banner {{ color }}">
+    <div class="ic-circ"><i class="ti ti-{{ icono }}" aria-hidden="true"></i></div>
+    <div><h3>{{ titulo }}</h3>{% if sub %}<p>{{ sub }}</p>{% endif %}</div>
+  </div>
+{% endmacro %}
+
+{% macro registro(tabla, campos, columnas, filas, color='naranja', boton='Agregar') %}
+  <form class="reg {{ color }}" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% for n, e, t, opciones in campos %}
+      <label class="campo">
+        <span class="lbl"><i class="ti ti-{{ iconos.get(n, 'point') }}" aria-hidden="true"></i>{{ e }}</span>
+        {% if opciones %}
+          <span class="caja sel">
+            <select name="{{ n }}" required>
+              <option value="" disabled selected>Selecciona una opción</option>
+              {% for o in opciones %}<option>{{ o }}</option>{% endfor %}
+            </select>
+          </span>
+        {% elif t == 'fecha' %}
+          <span class="caja"><input type="date" name="{{ n }}" value="{{ hoy }}" required></span>
+        {% elif t == 'texto' %}
+          <span class="caja"><input type="text" name="{{ n }}" placeholder="Ingresa {{ e|lower }}" required></span>
+        {% else %}
+          <span class="caja"><input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" placeholder="Ingresa {{ e|lower }}" required></span>
+        {% endif %}
+      </label>
+    {% endfor %}
+    <div class="accion">
+      <button class="btn {{ color }}" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>{{ boton }}<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button>
+    </div>
+  </form>
+  {% if columnas %}
+  <div class="tabla-wrap">
+  <table>
+    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }}">{{ lbl }}</th>{% endfor %}<th class="{{ 'verde-h' if color == 'verde' }}"></th></tr>
+    {% for f in filas %}
+    <tr>
+      {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
+      <td class="acc">
+        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" style="display:inline">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <button class="btn-sec {{ color }}" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+{% endmacro %}
 
 <header>
   <div class="marca">
@@ -348,54 +418,10 @@ table.verde td{border-color:#e4f0dc}
 <main>
 {% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
 
-{% macro registro(tabla, campos, columnas, filas, color='naranja', boton='Agregar') %}
-  <form class="reg {{ color }}" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
-    <input type="hidden" name="tab" value="{{ tab }}">
-    {% for n, e, t, opciones in campos %}
-      <label class="campo">
-        <span class="lbl"><i class="ti ti-{{ iconos.get(n, 'point') }}" aria-hidden="true"></i>{{ e }}</span>
-        {% if opciones %}
-          <span class="caja sel">
-            <select name="{{ n }}" required>
-              <option value="" disabled selected>Selecciona una opción</option>
-              {% for o in opciones %}<option>{{ o }}</option>{% endfor %}
-            </select>
-          </span>
-        {% elif t == 'fecha' %}
-          <span class="caja"><input type="date" name="{{ n }}" value="{{ hoy }}" required></span>
-        {% elif t == 'texto' %}
-          <span class="caja"><input type="text" name="{{ n }}" placeholder="Ingresa {{ e|lower }}" required></span>
-        {% else %}
-          <span class="caja"><input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" placeholder="Ingresa {{ e|lower }}" required></span>
-        {% endif %}
-      </label>
-    {% endfor %}
-    <div class="accion">
-      <button class="{{ color }}"><i class="ti ti-plus" aria-hidden="true"></i>{{ boton }}</button>
-    </div>
-  </form>
-  {% if columnas %}
-  <table class="{{ color }}">
-    <tr>{% for c, lbl in columnas %}<th>{{ lbl }}</th>{% endfor %}<th></th></tr>
-    {% for f in filas %}
-    <tr>
-      {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
-      <td style="text-align:right">
-        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" style="display:inline">
-          <input type="hidden" name="tab" value="{{ tab }}">
-          <button class="sec {{ color }}"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
-{% endmacro %}
-
 {% if tab == 'dashboard' %}
   <section class="hero">
     <div class="txt">
-      <div class="circ naranja" style="width:60px;height:60px;font-size:28px">{{ ico('chart-bar') }}</div>
+      <div class="ic-circ naranja" style="width:60px;height:60px;font-size:28px;background:linear-gradient(135deg,#f5873a,#d4501a);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center">{{ ico('chart-bar') }}</div>
       <div>
         <small>Utilidad estimada del periodo</small>
         <b>{{ ind.utilidad|soles }}</b>
@@ -408,15 +434,15 @@ table.verde td{border-color:#e4f0dc}
 
   <div class="bloques">
     <div class="bloque b-ambar">
-      <div class="top"><div class="circ naranja">{{ ico('coins') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
+      <div class="top"><div class="circ">{{ ico('coins') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
       <small>Ventas totales</small><b>{{ ind.ingresos|soles }}</b><span>Ingresos registrados</span>
     </div>
     <div class="bloque b-azul">
-      <div class="top"><div class="circ azul">{{ ico('target') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
+      <div class="top"><div class="circ">{{ ico('target') }}</div><span class="tend">{{ ico('trending-up') }}</span></div>
       <small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b><span>En ventas mensuales</span>
     </div>
     <div class="bloque {{ 'b-rojo' if ind.pct_mermas > 10 else 'b-verde' }}">
-      <div class="top"><div class="circ verde">{{ ico('leaf') }}</div><span class="tend">{{ ico('circle-check') }}</span></div>
+      <div class="top"><div class="circ">{{ ico('leaf') }}</div><span class="tend">{{ ico('circle-check') }}</span></div>
       <small>Mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b><span>Objetivo menor a 10%</span>
     </div>
     <div class="bloque b-amarillo">
@@ -426,7 +452,7 @@ table.verde td{border-color:#e4f0dc}
   </div>
 
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('chart-bar') }}</div><h3>Platos por margen</h3></div>
+    {{ banner('chart-bar', 'Platos por margen', 'Margen de cada plato según su costo y precio de venta', 'naranja') }}
     {% for p in platos %}
     <div class="fila-plato">
       <span>{{ p['nombre'] }}</span>
@@ -438,7 +464,7 @@ table.verde td{border-color:#e4f0dc}
   </div>
 
   <div class="card filas">
-    <div class="cabecera"><div class="circ naranja">{{ ico('file-text') }}</div><h3>Detalle por plato</h3></div>
+    {{ banner('file-text', 'Detalle por plato', 'Costo, precio y ganancia de cada plato del menú', 'gris') }}
     {% for p in platos %}
     <div><span>{{ p['nombre'] }}</span><span>Costo {{ p['costo']|soles }} · Precio {{ p['precio']|soles }} · Ganancia {{ (p['precio']-p['costo'])|soles }}</span></div>
     {% endfor %}
@@ -447,7 +473,7 @@ table.verde td{border-color:#e4f0dc}
 
 {% if tab == 'ventas' %}
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('shopping-cart') }}</div><h3>Registrar venta</h3></div>
+    {{ banner('shopping-cart', 'Registrar venta', 'Anota cada venta por plato, canal y medio de pago', 'naranja') }}
     {{ registro('ventas', campos.ventas,
        [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas,
        'naranja', 'Registrar venta') }}
@@ -456,10 +482,10 @@ table.verde td{border-color:#e4f0dc}
 
 {% if tab == 'mermas' %}
   <div class="card">
-    <div class="cabecera"><div class="circ rojo">{{ ico('box') }}</div><h3>Registrar merma</h3></div>
+    {{ banner('box', 'Registrar merma', 'Anota los insumos desperdiciados en cocina y su costo', 'rojo') }}
     {{ registro('mermas', campos.mermas,
        [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('costo','Costo'),('causa','Causa')], mermas,
-       'naranja', 'Registrar merma') }}
+       'rojo', 'Registrar merma') }}
     <div class="res">Costo total de mermas registradas: {{ mermas_total|soles }}</div>
   </div>
 {% endif %}
@@ -467,23 +493,31 @@ table.verde td{border-color:#e4f0dc}
 {% if tab == 'costos' %}
   <div class="grid2">
     <div class="card">
-      <div class="cabecera"><div class="circ naranja">{{ ico('users') }}</div><h3>Mano de Obra Directa (MOD)</h3></div>
-      {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod, 'naranja') }}
-      <div class="total"><div><small>Total MOD</small><b>{{ total_mod|soles }}</b></div></div>
+      {{ banner('helmet', 'Mano de Obra Directa (MOD)', 'Registra el costo de la mano de obra directa de tu producción', 'naranja') }}
+      {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod, 'naranja', 'Agregar') }}
+      <div class="total naranja">
+        <div class="circ"><i class="ti ti-coins" aria-hidden="true"></i></div>
+        <div><small>Total MOD:</small><b>{{ total_mod|soles }}</b></div>
+        <i class="ti ti-trending-up tend" aria-hidden="true"></i>
+      </div>
     </div>
-    <div class="card verde">
-      <div class="cabecera"><div class="circ verde">{{ ico('building-store') }}</div><h3>Costos Indirectos (CIF)</h3></div>
-      {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif, 'verde') }}
-      <div class="total verde"><div><small>Total CIF</small><b>{{ total_cif|soles }}</b></div></div>
+    <div class="card">
+      {{ banner('settings', 'Costos Indirectos (CIF)', 'Registra los costos que no se relacionan directamente con la producción', 'verde') }}
+      {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif, 'verde', 'Agregar') }}
+      <div class="total verde">
+        <div class="circ"><i class="ti ti-coins" aria-hidden="true"></i></div>
+        <div><small>Total CIF:</small><b>{{ total_cif|soles }}</b></div>
+        <i class="ti ti-trending-up tend" aria-hidden="true"></i>
+      </div>
     </div>
   </div>
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('calculator') }}</div><h3>Prorrateo por plato</h3></div>
-    <form class="reg" method="get">
+    {{ banner('calculator', 'Prorrateo por plato', 'Reparte MOD y CIF entre las unidades vendidas del mes', 'azul') }}
+    <form class="reg azul" method="get">
       <input type="hidden" name="tab" value="costos">
       <label class="campo"><span class="lbl"><i class="ti ti-hash" aria-hidden="true"></i>Unidades vendidas al mes</span>
         <span class="caja"><input type="number" name="unid" value="{{ unid|int }}" min="1"></span></label>
-      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
+      <div class="accion"><button class="btn" type="submit"><i class="ti ti-calculator" aria-hidden="true"></i>Calcular<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
     <div class="res">MOD + CIF: {{ (total_mod+total_cif)|soles }}
       {% if pro %} → {{ pro|soles }} por plato{% endif %}</div>
@@ -492,40 +526,42 @@ table.verde td{border-color:#e4f0dc}
 
 {% if tab == 'fichas' %}
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('file-text') }}</div><h3>Ficha técnica de costo unitario</h3></div>
+    {{ banner('file-text', 'Ficha técnica de costo unitario', 'Calcula el costo, la ganancia y el margen de un plato', 'naranja') }}
     <form class="reg" method="get">
       <input type="hidden" name="tab" value="fichas">
       <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>MPD (S/)</span><span class="caja"><input type="number" step="any" name="f_mpd" value="60"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>MOD (S/)</span><span class="caja"><input type="number" step="any" name="f_mod" value="8"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-file-text" aria-hidden="true"></i>CIF (S/)</span><span class="caja"><input type="number" step="any" name="f_cif" value="7"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-tag" aria-hidden="true"></i>Precio de venta (S/)</span><span class="caja"><input type="number" step="any" name="f_precio" value="115"></span></label>
-      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
+      <div class="accion"><button class="btn" type="submit"><i class="ti ti-calculator" aria-hidden="true"></i>Calcular<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
     {% if ficha %}
     <div class="res">Costo total: {{ ficha.costo|soles }} · Ganancia: {{ ficha.ganancia|soles }} · Margen: {{ '%.1f'|format(ficha.margen) }}%</div>
     {% endif %}
   </div>
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('tools-kitchen-2') }}</div><h3>Platos del menú</h3></div>
+    {{ banner('tools-kitchen-2', 'Platos del menú', 'Costo, precio y margen de cada presentación', 'gris') }}
+    <div class="tabla-wrap">
     <table>
       <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Margen</th></tr>
       {% for p in platos %}
       <tr><td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td><td>{{ p['margen'] }}%</td></tr>
       {% endfor %}
     </table>
+    </div>
   </div>
 {% endif %}
 
 {% if tab == 'equilibrio' %}
   <div class="card">
-    <div class="cabecera"><div class="circ azul">{{ ico('scale') }}</div><h3>Cálculo del punto de equilibrio</h3></div>
-    <form class="reg" method="get">
+    {{ banner('scale', 'Cálculo del punto de equilibrio', 'Unidades mínimas que debes vender para no tener pérdidas', 'azul') }}
+    <form class="reg azul" method="get">
       <input type="hidden" name="tab" value="equilibrio">
       <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>Costos fijos (S/)</span><span class="caja"><input type="number" step="any" name="e_fijos" value="56000"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-tag" aria-hidden="true"></i>Precio (S/)</span><span class="caja"><input type="number" step="any" name="e_precio" value="115"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-coin" aria-hidden="true"></i>Costo variable (S/)</span><span class="caja"><input type="number" step="any" name="e_var" value="75"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-target" aria-hidden="true"></i>Meta (unidades)</span><span class="caja"><input type="number" name="e_meta" value="1800"></span></label>
-      <div class="accion"><button><i class="ti ti-calculator" aria-hidden="true"></i>Calcular</button></div>
+      <div class="accion"><button class="btn" type="submit"><i class="ti ti-calculator" aria-hidden="true"></i>Calcular<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
     {% if eq %}
       {% if eq.error %}
@@ -542,42 +578,48 @@ table.verde td{border-color:#e4f0dc}
 
 {% if tab == 'reportes' %}
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('report') }}</div><h3>Resultados mensuales</h3>
-      <a href="{{ url_for('exportar') }}" class="aux">{{ ico('download') }} Exportar a CSV</a></div>
+    {{ banner('report', 'Resultados mensuales', 'Ingresos, costos y margen de cada mes registrado', 'naranja') }}
+    <div style="text-align:right;margin:-8px 0 8px">
+      <a href="{{ url_for('exportar') }}" class="btn-sec" style="text-decoration:none"><i class="ti ti-download" aria-hidden="true"></i>Exportar a CSV</a>
+    </div>
+    <div class="tabla-wrap">
     <table>
       <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
       {% for r in reportes %}
       <tr><td>{{ r.mes }}</td><td>{{ r.ing|soles }}</td><td>{{ r.cv|soles }}</td><td>{{ r.margen|soles }}</td><td>{{ '%.1f'|format(r.pct) }}%</td></tr>
       {% endfor %}
     </table>
+    </div>
   </div>
 {% endif %}
 
 {% if tab == 'usuarios' %}
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('users') }}</div><h3>Usuarios del sistema</h3></div>
+    {{ banner('users', 'Usuarios del sistema', 'Personas con acceso y su rol en el negocio', 'naranja') }}
+    <div class="tabla-wrap">
     <table>
       <tr><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr>
       {% for u in usuarios %}
       <tr>
         <td>{{ u['nombre'] }}</td><td>{{ u['rol'] }}</td>
         <td>{{ 'Activo' if u['activo'] else 'Inactivo' }}</td>
-        <td style="text-align:right">
+        <td class="acc">
           <form method="post" action="{{ url_for('toggle_usuario', id_=u['id']) }}" style="display:inline">
-            <button class="sec">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
+            <button class="btn-sec" type="submit">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
           </form>
           <form method="post" action="{{ url_for('eliminar', tabla='usuarios', id_=u['id']) }}" style="display:inline">
             <input type="hidden" name="tab" value="usuarios">
-            <button class="sec"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
+            <button class="btn-sec" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
           </form>
         </td>
       </tr>
       {% endfor %}
     </table>
+    </div>
   </div>
   <div class="card">
-    <div class="cabecera"><div class="circ naranja">{{ ico('user-plus') }}</div><h3>Agregar usuario</h3></div>
-    {{ registro('usuarios', campos.usuarios, [], [], 'naranja', 'Agregar usuario') }}
+    {{ banner('user-plus', 'Agregar usuario', 'Registra una persona con acceso al sistema', 'verde') }}
+    {{ registro('usuarios', campos.usuarios, [], [], 'verde', 'Agregar usuario') }}
   </div>
 {% endif %}
 </main>
