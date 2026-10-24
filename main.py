@@ -149,18 +149,18 @@ PLANTILLA = """
 :root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--madera-osc:#c9a06a;--texto:#222;--muted:#6b7280;
   --borde:#e5e7eb;--gris:#f5f5f3;--blanco:#fff;--ambar:#FAEEDA;--ambar-t:#633806;--ambar-x:#412402;
   --azul:#E6F1FB;--azul-t:#0C447C;--azul-x:#042C53;--rojo-f:#FCEBEB;--rojo-t:#791F1F;--rojo-x:#501313;
-  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--verde-barra:#639922;--rojo-barra:#E24B4A}
+  --verde-f:#EAF3DE;--verde-t:#27500A;--verde-x:#173404;--gris-barra:#eeeeea}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:var(--texto);font-size:14px}
-header{background:var(--naranja);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:var(--texto);font-size:14px;
+  display:grid;grid-template-columns:230px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+header{grid-column:1/-1;background:var(--naranja);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 header h1{margin:0;font-size:16px;font-weight:500}
-header span{font-size:12px;opacity:1;color:#fbe3d2}
-nav{background:var(--madera);padding:8px 14px;display:flex;flex-wrap:wrap;gap:4px;border-bottom:0.5px solid var(--madera-osc)}
-nav a{padding:7px 12px;border-radius:8px;text-decoration:none;color:var(--madera-osc);color:#633806;font-size:13px}
+header span{font-size:12px;color:#fbe3d2}
+nav{background:var(--madera);padding:14px 10px;display:flex;flex-direction:column;gap:4px;border-right:0.5px solid var(--madera-osc)}
+nav a{display:block;padding:10px 12px;border-radius:8px;text-decoration:none;color:#633806;font-size:13px}
 nav a:hover{background:#fff}
 nav a.activo{background:#fff;color:var(--naranja-osc);font-weight:500}
-main{padding:20px;max-width:1100px;margin:auto}
-h2.titulo{font-size:18px;font-weight:500;margin:0 0 14px;color:var(--naranja-osc)}
+main{min-width:0;padding:20px;max-width:1100px;width:100%}
 .card{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:16px;margin-bottom:16px}
 .card h3{margin:0 0 10px;font-size:15px;font-weight:500}
 .hero{background:var(--blanco);border:0.5px solid var(--borde);border-radius:12px;padding:20px 18px;margin-bottom:12px}
@@ -176,12 +176,12 @@ h2.titulo{font-size:18px;font-weight:500;margin:0 0 14px;color:var(--naranja-osc
 .rojo{background:var(--rojo-f);color:var(--rojo-t)}.rojo b{color:var(--rojo-x)}
 .verde{background:var(--verde-f);color:var(--verde-t)}.verde b{color:var(--verde-x)}
 .fila-plato{display:grid;grid-template-columns:130px 1fr 60px;align-items:center;gap:10px;font-size:13px;padding:6px 0}
-.barra{height:8px;background:var(--gris);border-radius:4px;overflow:hidden}
+.barra{height:8px;background:var(--gris-barra);border-radius:4px;overflow:hidden}
 .barra div{height:100%;border-radius:4px}
 .filas div{display:flex;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid var(--borde);font-size:13px}
 .filas div:last-child{border-bottom:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{flex-direction:row;flex-wrap:wrap;border-right:none}}
 form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
 form.reg label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
 input,select{padding:8px;border:0.5px solid #bbb;border-radius:8px;font-size:14px;background:#fff}
@@ -191,7 +191,6 @@ button.sec{padding:4px 8px;font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:12px;color:var(--muted);font-weight:500;padding:8px 6px;border-bottom:0.5px solid var(--borde)}
 td{padding:9px 6px;border-bottom:0.5px solid var(--borde)}
-tr.total td{font-weight:500}
 .flash{background:var(--rojo-f);color:var(--rojo-t);padding:10px;border-radius:8px;margin-bottom:14px}
 .res{background:var(--ambar);color:var(--ambar-x);border-radius:10px;padding:12px;margin-top:10px}
 .nota{color:var(--muted);font-size:12px;margin:8px 0 0}
