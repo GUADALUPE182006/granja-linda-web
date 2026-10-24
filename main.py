@@ -1,0 +1,525 @@
+import csv
+import io
+import math
+import os
+import sqlite3
+from datetime import date
+
+from flask import (Flask, Response, abort, flash, get_flashed_messages,
+                   redirect, render_template_string, request, url_for)
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave")
+DB = os.environ.get("DB_PATH", "granja_linda.db")
+
+COMISION_APPS = 0.18
+CANALES = ["Salón", "Delivery propio", "Apps de delivery", "Llevar (take away)"]
+PAGOS = ["Efectivo", "Yape", "Plin", "POS (tarjeta)"]
+CAUSAS = ["Mano", "Razón", "Vencimiento", "Preparación"]
+ROLES = ["Administrador", "Caja", "Cocina", "Compras"]
+
+CAMPOS = {
+    "ventas": [("fecha", "Fecha", "fecha", None), ("plato", "Plato", "texto", None),
+               ("cantidad", "Cantidad", "entero", None), ("canal", "Canal", "texto", CANALES),
+               ("pago", "Pago", "texto", PAGOS)],
+    "mermas": [("fecha", "Fecha", "fecha", None), ("insumo", "Insumo", "texto", None),
+               ("cantidad", "Cantidad", "decimal", None), ("costo", "Costo (S/)", "decimal", None),
+               ("causa", "Causa", "texto", CAUSAS)],
+    "planilla_mod": [("rol", "Puesto", "texto", None), ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
+    "costos_cif": [("concepto", "Concepto", "texto", None), ("monto", "Monto mensual (S/)", "decimal", None)],
+    "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
+}
+
+SECCIONES = [("dashboard", "📊 Dashboard"), ("ventas", "💳 Ventas"), ("mermas", "📦 Mermas"),
+             ("costos", "🔧 Costos MOD/CIF"), ("fichas", "📋 Fichas técnicas"),
+             ("equilibrio", "⚖️ Punto de equilibrio"), ("reportes", "📈 Reportes"),
+             ("usuarios", "👤 Usuarios")]
+
+
+@app.template_filter("soles")
+def soles(n):
+    return f"S/ {n:,.2f}"
+
+
+# ---------- Base de datos ----------
+def conectar():
+    con = sqlite3.connect(DB)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def init_db():
+    con = conectar()
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS platos (id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, costo REAL, precio REAL);
+        CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, plato TEXT, cantidad INTEGER, canal TEXT, pago TEXT);
+        CREATE TABLE IF NOT EXISTS mermas (id INTEGER PRIMARY KEY, fecha TEXT, insumo TEXT, cantidad REAL, costo REAL, causa TEXT);
+        CREATE TABLE IF NOT EXISTS planilla_mod (id INTEGER PRIMARY KEY, rol TEXT, sueldo REAL);
+        CREATE TABLE IF NOT EXISTS costos_cif (id INTEGER PRIMARY KEY, concepto TEXT, monto REAL);
+        CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT, rol TEXT, activo INTEGER DEFAULT 1);
+    """)
+    semillas = {
+        "platos": ("INSERT INTO platos(nombre,costo,precio) VALUES(?,?,?)", [
+            ("1/4 Pollo", 22, 38), ("Pollo entero", 75, 115), ("Parrilla familiar", 110, 180)]),
+        "planilla_mod": ("INSERT INTO planilla_mod(rol,sueldo) VALUES(?,?)", [
+            ("Cocinero(a) principal", 1200), ("Ayudante de cocina", 1025),
+            ("Cajero(a)", 1025), ("Delivery", 1100)]),
+        "costos_cif": ("INSERT INTO costos_cif(concepto,monto) VALUES(?,?)", [
+            ("Servicios públicos", 850), ("Arrendamiento del local", 1500),
+            ("Mantenimiento de equipos", 400), ("Arbitrios", 180)]),
+        "usuarios": ("INSERT INTO usuarios(nombre,rol) VALUES(?,?)", [
+            ("J. Castro", "Administrador"), ("M. Ramírez", "Caja"), ("L. Huamán", "Cocina")]),
+    }
+    for tabla, (sql, filas) in semillas.items():
+        if con.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0] == 0:
+            con.executemany(sql, filas)
+    con.commit()
+    con.close()
+
+
+init_db()
+
+
+def indicadores():
+    con = conectar()
+    ing = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                         JOIN platos p ON p.nombre=v.plato""").fetchone()[0]
+    ing_apps = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                              JOIN platos p ON p.nombre=v.plato
+                              WHERE v.canal='Apps de delivery'""").fetchone()[0]
+    cvar = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.costo),0) FROM ventas v
+                          JOIN platos p ON p.nombre=v.plato""").fetchone()[0]
+    dig = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                         JOIN platos p ON p.nombre=v.plato
+                         WHERE v.pago<>'Efectivo'""").fetchone()[0]
+    mermas = con.execute("SELECT COALESCE(SUM(costo),0) FROM mermas").fetchone()[0]
+    mod = con.execute("SELECT COALESCE(SUM(sueldo),0) FROM planilla_mod").fetchone()[0]
+    cif = con.execute("SELECT COALESCE(SUM(monto),0) FROM costos_cif").fetchone()[0]
+    con.close()
+
+    contrib = ing - ing_apps * COMISION_APPS - cvar
+    fijos = mod + cif
+    return {
+        "ingresos": ing,
+        "utilidad": contrib - mermas - fijos,
+        "pct_mermas": mermas / cvar * 100 if cvar else 0,
+        "pe": fijos * ing / contrib if ing and contrib > 0 else None,
+        "pct_digital": dig / ing * 100 if ing else 0,
+    }
+
+
+def campos_de(tabla):
+    con = conectar()
+    nombres = [r[0] for r in con.execute("SELECT nombre FROM platos ORDER BY id")]
+    con.close()
+    return [(n, e, t, nombres if n == "plato" else o) for n, e, t, o in CAMPOS[tabla]]
+
+
+def valor_de(tipo, texto, etiqueta):
+    texto = (texto or "").strip()
+    if tipo in ("texto", "fecha"):
+        if not texto:
+            raise ValueError(f"'{etiqueta}' no puede estar vacío.")
+        return texto
+    try:
+        v = float(texto.replace(",", "."))
+    except ValueError:
+        raise ValueError(f"'{etiqueta}' debe ser un número.")
+    if v < 0:
+        raise ValueError(f"'{etiqueta}' no puede ser negativo.")
+    return int(v) if tipo == "entero" else v
+
+
+def num_arg(nombre, defecto):
+    try:
+        return float(request.args.get(nombre, defecto).replace(",", "."))
+    except ValueError:
+        return None
+
+
+# ---------- Plantilla ----------
+PLANTILLA = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La Granja Linda - Gestión</title>
+<style>
+:root{--naranja:#d9631e;--naranja-osc:#b34e12;--madera:#f3dcb5;--verde-claro:#d6f0df;--rojo:#c0392b;--rojo-claro:#fde2e0;--gris:#f4f5f7;--muted:#6b7280}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--gris);color:#222}
+header{background:var(--naranja);color:#fff;padding:14px 22px}
+header h1{margin:0;font-size:20px}
+nav{background:var(--madera);padding:8px 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+nav a{padding:8px 12px;border-radius:8px;text-decoration:none;color:#4a2a10;font-weight:700;font-size:14px}
+nav a.activo{background:var(--naranja);color:#fff}
+.dropdown{position:relative;display:inline-block}
+.dropbtn{padding:8px 12px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja)}
+.dropbtn:hover{background:var(--madera)}
+.dropdown-menu{display:none;position:absolute;top:100%;left:0;min-width:230px;background:#fff;border-radius:10px;box-shadow:0 6px 16px rgba(0,0,0,.18);padding:6px;z-index:100}
+.dropdown:hover .dropdown-menu,.dropdown:focus-within .dropdown-menu{display:block}
+.dropdown-menu a{display:block;padding:9px 12px;border-radius:8px;color:#4a2a10;text-decoration:none;font-weight:700;font-size:14px}
+.dropdown-menu a:hover{background:var(--madera)}
+main{padding:20px;max-width:1200px;margin:auto}
+.card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:18px}
+.card h3{margin:0 0 10px;color:var(--naranja-osc)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:#fff;border-top:4px solid var(--naranja);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.kpi small{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:11px}
+.kpi b{display:block;font-size:22px;margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+form.reg{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+form.reg label{font-size:12px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input,select{padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px}
+button{background:var(--naranja);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;cursor:pointer}
+button:hover{background:var(--naranja-osc)}
+button.sec{background:#fff;color:var(--naranja-osc);border:1px solid var(--naranja);padding:4px 8px;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:12px;color:var(--muted);text-transform:uppercase;padding:8px 6px;border-bottom:2px solid #eee}
+td{padding:9px 6px;border-bottom:1px solid #f0f0f0}
+tr.bueno td{background:var(--verde-claro)}
+tr.malo td{background:var(--rojo-claro)}
+tr.total td{font-weight:800;border-top:2px solid #ddd}
+.flash{background:var(--rojo-claro);color:var(--rojo);padding:10px;border-radius:8px;margin-bottom:14px;font-weight:700}
+.res{background:var(--madera);border-radius:10px;padding:12px;margin-top:10px;font-weight:700}
+.nota{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header><h1>🐓 LA GRANJA LINDA · Gestión de costos</h1></header>
+
+<nav>
+  <div class="dropdown">
+    <button type="button" class="dropbtn">☰ Menú ▾</button>
+    <div class="dropdown-menu">
+      {% for id, nombre in secciones %}
+        <a href="{{ url_for('index', tab=id) }}">{{ nombre }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% for id, nombre in secciones %}
+    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}">{{ nombre }}</a>
+  {% endfor %}
+</nav>
+
+<main>
+{% for m in get_flashed_messages() %}<div class="flash">{{ m }}</div>{% endfor %}
+
+{% macro registro(tabla, campos, columnas, filas) %}
+  <form class="reg" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% for n, e, t, opciones in campos %}
+      <label>{{ e }}
+        {% if opciones %}
+          <select name="{{ n }}">{% for o in opciones %}<option>{{ o }}</option>{% endfor %}</select>
+        {% elif t == 'fecha' %}
+          <input type="date" name="{{ n }}" value="{{ hoy }}" required>
+        {% elif t == 'texto' %}
+          <input type="text" name="{{ n }}" required>
+        {% else %}
+          <input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" required>
+        {% endif %}
+      </label>
+    {% endfor %}
+    <button>Agregar</button>
+  </form>
+  <table>
+    <tr>{% for c, lbl in columnas %}<th>{{ lbl }}</th>{% endfor %}<th></th></tr>
+    {% for f in filas %}
+    <tr>
+      {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
+      <td>
+        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+          <button class="sec">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+{% endmacro %}
+
+{% if tab == 'dashboard' %}
+  <div class="kpis">
+    <div class="kpi"><small>Ingresos totales</small><b>{{ ind.ingresos|soles }}</b></div>
+    <div class="kpi"><small>Utilidad estimada</small><b>{{ ind.utilidad|soles }}</b></div>
+    <div class="kpi"><small>% mermas sobre insumos</small><b>{{ '%.1f'|format(ind.pct_mermas) }}%</b></div>
+    <div class="kpi"><small>Punto de equilibrio</small><b>{{ ind.pe|soles if ind.pe else '—' }}</b></div>
+    <div class="kpi"><small>Pagos digitales</small><b>{{ '%.1f'|format(ind.pct_digital) }}%</b></div>
+  </div>
+  <div class="card">
+    <h3>Top platos por rentabilidad</h3>
+    <table>
+      <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Ganancia</th><th>Margen</th></tr>
+      {% for p in platos %}
+      <tr class="{{ 'bueno' if p['margen'] >= 35 else 'malo' }}">
+        <td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td>
+        <td>{{ (p['precio']-p['costo'])|soles }}</td><td>{{ p['margen'] }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="nota">Verde: margen de 35% o más. Rojo: menos de 35%.</p>
+  </div>
+{% endif %}
+
+{% if tab == 'ventas' %}
+  <div class="card">
+    <h3>Registrar venta</h3>
+    {{ registro('ventas', campos.ventas,
+       [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas) }}
+  </div>
+{% endif %}
+
+{% if tab == 'mermas' %}
+  <div class="card">
+    <h3>Registrar merma</h3>
+    {{ registro('mermas', campos.mermas,
+       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('costo','Costo'),('causa','Causa')], mermas) }}
+    <div class="res">Costo total de mermas registradas: {{ mermas_total|soles }}</div>
+  </div>
+{% endif %}
+
+{% if tab == 'costos' %}
+  <div class="grid2">
+    <div class="card">
+      <h3>Mano de Obra Directa (MOD)</h3>
+      {{ registro('planilla_mod', campos.planilla_mod, [('rol','Puesto'),('sueldo','Sueldo')], mod) }}
+      <div class="res">Total MOD: {{ total_mod|soles }}</div>
+    </div>
+    <div class="card">
+      <h3>Costos Indirectos (CIF)</h3>
+      {{ registro('costos_cif', campos.costos_cif, [('concepto','Concepto'),('monto','Monto')], cif) }}
+      <div class="res">Total CIF: {{ total_cif|soles }}</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Prorrateo por plato</h3>
+    <form class="reg" method="get">
+      <input type="hidden" name="tab" value="costos">
+      <label>Unidades vendidas al mes<input type="number" name="unid" value="{{ unid|int }}" min="1"></label>
+      <button>Calcular</button>
+    </form>
+    <div class="res">MOD + CIF: {{ (total_mod+total_cif)|soles }}
+      {% if pro %} → {{ pro|soles }} por plato{% endif %}</div>
+  </div>
+{% endif %}
+
+{% if tab == 'fichas' %}
+  <div class="card">
+    <h3>Ficha técnica de costo unitario</h3>
+    <form class="reg" method="get">
+      <input type="hidden" name="tab" value="fichas">
+      <label>MPD (S/)<input type="number" step="any" name="f_mpd" value="60"></label>
+      <label>MOD (S/)<input type="number" step="any" name="f_mod" value="8"></label>
+      <label>CIF (S/)<input type="number" step="any" name="f_cif" value="7"></label>
+      <label>Precio de venta (S/)<input type="number" step="any" name="f_precio" value="115"></label>
+      <button>Calcular</button>
+    </form>
+    {% if ficha %}
+    <div class="res">Costo total: {{ ficha.costo|soles }} · Ganancia: {{ ficha.ganancia|soles }} · Margen: {{ '%.1f'|format(ficha.margen) }}%</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Platos del menú</h3>
+    <table>
+      <tr><th>Plato</th><th>Costo</th><th>Precio</th><th>Margen</th></tr>
+      {% for p in platos %}
+      <tr class="{{ 'bueno' if p['margen'] >= 35 else 'malo' }}">
+        <td>{{ p['nombre'] }}</td><td>{{ p['costo']|soles }}</td><td>{{ p['precio']|soles }}</td><td>{{ p['margen'] }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endif %}
+
+{% if tab == 'equilibrio' %}
+  <div class="card">
+    <h3>Cálculo del punto de equilibrio</h3>
+    <form class="reg" method="get">
+      <input type="hidden" name="tab" value="equilibrio">
+      <label>Costos fijos (S/)<input type="number" step="any" name="e_fijos" value="56000"></label>
+      <label>Precio (S/)<input type="number" step="any" name="e_precio" value="115"></label>
+      <label>Costo variable (S/)<input type="number" step="any" name="e_var" value="75"></label>
+      <label>Meta (unidades)<input type="number" name="e_meta" value="1800"></label>
+      <button>Calcular</button>
+    </form>
+    {% if eq %}
+      {% if eq.error %}
+        <div class="flash">{{ eq.error }}</div>
+      {% else %}
+        <div class="res">{{ '{:,}'.format(eq.pe) }} unidades al mes ({{ eq.pe_ventas|soles }} en ventas)</div>
+        <p>Margen de contribución: {{ eq.mc|soles }} por unidad</p>
+        <p><b style="color:{{ 'green' if eq.holg >= 0 else 'red' }}">Holgura sobre la meta: {{ '%+.1f'|format(eq.holg) }}%</b></p>
+      {% endif %}
+    {% endif %}
+    <p class="nota">Punto de equilibrio = Costos fijos / (Precio − Costo variable unitario)</p>
+  </div>
+{% endif %}
+
+{% if tab == 'reportes' %}
+  <div class="card">
+    <h3>Resultados mensuales <a href="{{ url_for('exportar') }}" style="float:right;font-size:13px">⬇ Exportar a CSV</a></h3>
+    <table>
+      <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
+      {% for r in reportes %}
+      <tr><td>{{ r.mes }}</td><td>{{ r.ing|soles }}</td><td>{{ r.cv|soles }}</td><td>{{ r.margen|soles }}</td><td>{{ '%.1f'|format(r.pct) }}%</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+{% endif %}
+
+{% if tab == 'usuarios' %}
+  <div class="card">
+    <h3>Usuarios del sistema</h3>
+    <table>
+      <tr><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr>
+      {% for u in usuarios %}
+      <tr>
+        <td>{{ u['nombre'] }}</td><td>{{ u['rol'] }}</td>
+        <td>{{ 'Activo' if u['activo'] else 'Inactivo' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('toggle_usuario', id_=u['id']) }}" style="display:inline">
+            <button class="sec">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('eliminar', tabla='usuarios', id_=u['id']) }}" style="display:inline">
+            <input type="hidden" name="tab" value="usuarios">
+            <button class="sec">Eliminar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  <div class="card">
+    <h3>Agregar usuario</h3>
+    {{ registro('usuarios', campos.usuarios, [], []) }}
+  </div>
+{% endif %}
+</main>
+</body>
+</html>
+"""
+
+
+# ---------- Rutas ----------
+@app.route("/")
+def index():
+    tab = request.args.get("tab", "dashboard")
+    con = conectar()
+    platos = con.execute("""SELECT nombre, costo, precio,
+                            ROUND((precio-costo)*100.0/precio,1) AS margen
+                            FROM platos ORDER BY margen DESC""").fetchall()
+    ventas = con.execute("SELECT * FROM ventas ORDER BY id DESC").fetchall()
+    mermas = con.execute("SELECT * FROM mermas ORDER BY id DESC").fetchall()
+    mod = con.execute("SELECT * FROM planilla_mod ORDER BY id").fetchall()
+    cif = con.execute("SELECT * FROM costos_cif ORDER BY id").fetchall()
+    usuarios = con.execute("SELECT * FROM usuarios ORDER BY id").fetchall()
+    rows = con.execute("""SELECT substr(v.fecha,1,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
+                          SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                          JOIN platos p ON p.nombre=v.plato GROUP BY mes ORDER BY mes""").fetchall()
+    con.close()
+
+    reportes = []
+    for r in rows:
+        ing, cv = r["ing"] or 0, r["cv"] or 0
+        m = ing - cv
+        reportes.append({"mes": r["mes"], "ing": ing, "cv": cv, "margen": m,
+                         "pct": m / ing * 100 if ing else 0})
+
+    total_mod = sum(r["sueldo"] for r in mod)
+    total_cif = sum(r["monto"] for r in cif)
+    unid = num_arg("unid", "1800")
+    pro = (total_mod + total_cif) / unid if unid else None
+
+    ficha = None
+    vals = [num_arg(k, d) for k, d in [("f_mpd", "60"), ("f_mod", "8"), ("f_cif", "7"), ("f_precio", "115")]]
+    if None not in vals:
+        mpd, mo, cf, precio = vals
+        costo = mpd + mo + cf
+        ficha = {"costo": costo, "ganancia": precio - costo,
+                 "margen": (precio - costo) / precio * 100 if precio else 0}
+
+    eq = None
+    vals = [num_arg(k, d) for k, d in [("e_fijos", "56000"), ("e_precio", "115"),
+                                       ("e_var", "75"), ("e_meta", "1800")]]
+    if None not in vals:
+        fijos, precio, var, meta = vals
+        mc = precio - var
+        if mc <= 0:
+            eq = {"error": "El precio debe ser mayor al costo variable."}
+        else:
+            pe = math.ceil(fijos / mc)
+            eq = {"pe": pe, "pe_ventas": pe * precio, "mc": mc,
+                  "holg": (meta - pe) / meta * 100 if meta else 0}
+
+    return render_template_string(
+        PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
+        ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
+        mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
+        total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
+        usuarios=usuarios, reportes=reportes, ficha=ficha, eq=eq,
+        campos={t: campos_de(t) for t in CAMPOS},
+    )
+
+
+@app.route("/agregar/<tabla>", methods=["POST"])
+def agregar(tabla):
+    if tabla not in CAMPOS:
+        abort(404)
+    tab = request.form.get("tab", "dashboard")
+    try:
+        datos = {n: valor_de(t, request.form.get(n), e) for n, e, t, _ in CAMPOS[tabla]}
+    except ValueError as err:
+        flash(str(err))
+        return redirect(url_for("index", tab=tab))
+    cols = ", ".join(datos)
+    marcas = ", ".join("?" * len(datos))
+    con = conectar()
+    con.execute(f"INSERT INTO {tabla} ({cols}) VALUES ({marcas})", list(datos.values()))
+    con.commit()
+    con.close()
+    return redirect(url_for("index", tab=tab))
+
+
+@app.route("/eliminar/<tabla>/<int:id_>", methods=["POST"])
+def eliminar(tabla, id_):
+    if tabla not in CAMPOS:
+        abort(404)
+    con = conectar()
+    con.execute(f"DELETE FROM {tabla} WHERE id=?", (id_,))
+    con.commit()
+    con.close()
+    return redirect(url_for("index", tab=request.form.get("tab", "dashboard")))
+
+
+@app.route("/usuarios/<int:id_>/toggle", methods=["POST"])
+def toggle_usuario(id_):
+    con = conectar()
+    con.execute("UPDATE usuarios SET activo = 1 - activo WHERE id=?", (id_,))
+    con.commit()
+    con.close()
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/exportar.csv")
+def exportar():
+    con = conectar()
+    rows = con.execute("""SELECT substr(v.fecha,1,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
+                          SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                          JOIN platos p ON p.nombre=v.plato GROUP BY mes ORDER BY mes""").fetchall()
+    con.close()
+    salida = io.StringIO()
+    w = csv.writer(salida)
+    w.writerow(["Mes", "Ingresos", "Costo variable", "Margen bruto", "Margen %"])
+    for r in rows:
+        ing, cv = r["ing"] or 0, r["cv"] or 0
+        w.writerow([r["mes"], round(ing, 2), round(cv, 2), round(ing - cv, 2),
+                    round((ing - cv) / ing * 100, 1) if ing else 0])
+    return Response(salida.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=reporte_mensual.csv"})
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
