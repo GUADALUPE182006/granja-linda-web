@@ -1456,6 +1456,10 @@ def cambiar_clave():
 @app.route("/")
 def index():
     tab = request.args.get("tab", "dashboard")
+    # La sección Usuarios es solo para administradores
+    if tab == "usuarios" and not es_admin():
+        flash("La sección Usuarios solo la puede ver el administrador.", "error")
+        return redirect(url_for("index", tab="dashboard"))
     platos = [dict(p, margen=float(p["margen"])) for p in consultar("""
         SELECT nombre, costo, precio,
                ROUND((((precio-costo)*100.0/precio))::numeric, 1) AS margen
@@ -1464,7 +1468,8 @@ def index():
     mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
     mod = consultar("SELECT * FROM planilla_mod ORDER BY id")
     cif = consultar("SELECT * FROM costos_cif ORDER BY id")
-    personas = consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
+    personas = (consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
+                if es_admin() else [])
     rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
                         SUM(v.cantidad*p.costo) AS cv FROM ventas v
                         JOIN platos p ON p.nombre=v.plato
@@ -1507,7 +1512,8 @@ def index():
     rol = session.get("rol", "usuario")
 
     return render_template_string(
-        PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
+        PLANTILLA, tab=tab, hoy=date.today().isoformat(),
+        secciones=[x for x in SECCIONES if x[0] != "usuarios" or es_admin()],
         logo_img=logo_archivo(), casa_svg=CASA_SVG, gallo_svg=GALLO_SVG,
         ola_svg=OLA_SVG, gallina_svg=GALLINA_SVG, iconos=ICONOS,
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
