@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from flask import (Flask, Response, abort, flash, get_flashed_messages, redirect,
                    render_template_string, request, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -170,26 +171,59 @@ def conectar():
                             cursor_factory=psycopg2.extras.RealDictCursor)
 
 
-def consultar(sql, params=(), uno=False):
-    con = conectar()
+_pool = None
+
+
+def _tomar():
+    """Toma una conexión ya abierta del grupo (evita reconectar a Supabase en cada consulta)."""
+    global _pool
+    if _pool is None:
+        if not DATABASE_URL:
+            raise RuntimeError("Falta la variable DATABASE_URL (cadena de conexión de Supabase).")
+        _pool = psycopg2.pool.ThreadedConnectionPool(
+            1, 5, DATABASE_URL, sslmode="require",
+            cursor_factory=psycopg2.extras.RealDictCursor,
+            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
+    con = _pool.getconn()
+    if not con.autocommit:
+        con.autocommit = True
+    return con
+
+
+def _soltar(con, rota=False):
     try:
-        with con.cursor() as cur:
-            cur.execute(sql, params)
-            return cur.fetchone() if uno else cur.fetchall()
-    finally:
-        con.close()
+        _pool.putconn(con, close=bool(rota or con.closed))
+    except Exception:
+        pass
+
+
+def _correr(sql, params, modo):
+    for intento in (1, 2):
+        con = _tomar()
+        rota = False
+        try:
+            with con.cursor() as cur:
+                cur.execute(sql, params)
+                if modo == "uno":
+                    return cur.fetchone()
+                if modo == "filas":
+                    return cur.rowcount
+                return cur.fetchall()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            # Conexión caída por inactividad: se descarta y se reintenta con una nueva
+            rota = True
+            if intento == 2:
+                raise
+        finally:
+            _soltar(con, rota)
+
+
+def consultar(sql, params=(), uno=False):
+    return _correr(sql, params, "uno" if uno else "todos")
 
 
 def ejecutar(sql, params=()):
-    con = conectar()
-    try:
-        with con.cursor() as cur:
-            cur.execute(sql, params)
-            filas = cur.rowcount
-        con.commit()
-        return filas
-    finally:
-        con.close()
+    return _correr(sql, params, "filas")
 
 
 def escalar(sql, params=()):
@@ -277,19 +311,19 @@ def obtener_colores():
 
 
 def indicadores():
-    ing = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                     JOIN platos p ON p.nombre=v.plato""")
-    ing_apps = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                          JOIN platos p ON p.nombre=v.plato
-                          WHERE v.canal='Apps de delivery'""")
-    cvar = escalar("""SELECT COALESCE(SUM(v.cantidad*p.costo),0) FROM ventas v
-                      JOIN platos p ON p.nombre=v.plato""")
-    dig = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                     JOIN platos p ON p.nombre=v.plato
-                     WHERE v.pago<>'Efectivo'""")
-    mermas = escalar("SELECT COALESCE(SUM(costo),0) FROM mermas")
-    mod = escalar("SELECT COALESCE(SUM(sueldo),0) FROM planilla_mod")
-    cif = escalar("SELECT COALESCE(SUM(monto),0) FROM costos_cif")
+    f = consultar("""
+        SELECT
+          (SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v JOIN platos p ON p.nombre=v.plato) AS ing,
+          (SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v JOIN platos p ON p.nombre=v.plato
+             WHERE v.canal='Apps de delivery') AS ing_apps,
+          (SELECT COALESCE(SUM(v.cantidad*p.costo),0) FROM ventas v JOIN platos p ON p.nombre=v.plato) AS cvar,
+          (SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v JOIN platos p ON p.nombre=v.plato
+             WHERE v.pago<>'Efectivo') AS dig,
+          (SELECT COALESCE(SUM(costo),0) FROM mermas) AS mermas,
+          (SELECT COALESCE(SUM(sueldo),0) FROM planilla_mod) AS mano_obra,
+          (SELECT COALESCE(SUM(monto),0) FROM costos_cif) AS cif""", uno=True)
+    ing, ing_apps, cvar, dig = f["ing"], f["ing_apps"], f["cvar"], f["dig"]
+    mermas, mod, cif = f["mermas"], f["mano_obra"], f["cif"]
 
     contrib = ing - ing_apps * COMISION_APPS - cvar
     fijos = mod + cif
@@ -302,8 +336,7 @@ def indicadores():
     }
 
 
-def campos_de(tabla):
-    nombres = [r["nombre"] for r in consultar("SELECT nombre FROM platos ORDER BY id")]
+def campos_de(tabla, nombres):
     return [(n, e, t, nombres if n == "plato" else o) for n, e, t, o in CAMPOS[tabla]]
 
 
@@ -1471,27 +1504,37 @@ def index():
     if tab == "usuarios" and not es_admin():
         flash("La sección Usuarios solo la puede ver el administrador.", "error")
         return redirect(url_for("index", tab="dashboard"))
-    platos = [dict(p, margen=float(p["margen"])) for p in consultar("""
-        SELECT nombre, costo, precio,
-               ROUND((((precio-costo)*100.0/precio))::numeric, 1) AS margen
-        FROM platos ORDER BY margen DESC""")]
-    ventas = consultar("SELECT * FROM ventas ORDER BY id DESC")
-    mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
-    mod = consultar("SELECT * FROM planilla_mod ORDER BY id")
-    cif = consultar("SELECT * FROM costos_cif ORDER BY id")
-    personas = (consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
-                if es_admin() else [])
-    rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
-                        SUM(v.cantidad*p.costo) AS cv FROM ventas v
-                        JOIN platos p ON p.nombre=v.plato
-                        GROUP BY LEFT(v.fecha,7) ORDER BY mes""")
 
-    reportes = []
-    for r in rows:
-        ing, cv = r["ing"] or 0, r["cv"] or 0
-        m = ing - cv
-        reportes.append({"mes": r["mes"], "ing": ing, "cv": cv, "margen": m,
-                         "pct": m / ing * 100 if ing else 0})
+    # Solo se consulta lo que la sección abierta necesita (menos viajes a la base = más rápido)
+    platos, ventas, mermas, mod, cif, personas, reportes = [], [], [], [], [], [], []
+    ind = None
+    if tab in ("dashboard", "fichas"):
+        platos = [dict(p, margen=float(p["margen"])) for p in consultar("""
+            SELECT nombre, costo, precio,
+                   ROUND((((precio-costo)*100.0/precio))::numeric, 1) AS margen
+            FROM platos ORDER BY margen DESC""")]
+    if tab == "dashboard":
+        ind = indicadores()
+    if tab == "ventas":
+        ventas = consultar("SELECT * FROM ventas ORDER BY id DESC")
+    if tab == "mermas":
+        mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
+    if tab == "costos":
+        mod = consultar("SELECT * FROM planilla_mod ORDER BY id")
+        cif = consultar("SELECT * FROM costos_cif ORDER BY id")
+    if tab == "usuarios" and es_admin():
+        personas = consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
+    if tab == "reportes":
+        for r in consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
+                              SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                              JOIN platos p ON p.nombre=v.plato
+                              GROUP BY LEFT(v.fecha,7) ORDER BY mes"""):
+            ing, cv = r["ing"] or 0, r["cv"] or 0
+            m = ing - cv
+            reportes.append({"mes": r["mes"], "ing": ing, "cv": cv, "margen": m,
+                             "pct": m / ing * 100 if ing else 0})
+    nombres = ([r["nombre"] for r in consultar("SELECT nombre FROM platos ORDER BY id")]
+               if tab == "ventas" else [])
 
     total_mod = sum(r["sueldo"] for r in mod)
     total_cif = sum(r["monto"] for r in cif)
@@ -1527,11 +1570,11 @@ def index():
         secciones=[x for x in SECCIONES if x[0] != "usuarios" or es_admin()],
         logo_img=logo_archivo(), casa_svg=CASA_SVG, gallo_svg=GALLO_SVG,
         ola_svg=OLA_SVG, gallina_svg=GALLINA_SVG, iconos=ICONOS,
-        ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
+        ind=ind, platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
         personas=personas, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
-        ficha=ficha, eq=eq, campos={t: campos_de(t) for t in CAMPOS},
+        ficha=ficha, eq=eq, campos={t: campos_de(t, nombres) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
         rol_txt=ROL_CUENTA.get(rol, "Usuario"), puesto=session.get("puesto", ""),
