@@ -37,7 +37,9 @@ CAUSAS = ["Mano", "Razón", "Vencimiento", "Preparación"]
 PUESTOS = ["Cocinero(a) principal", "Ayudante de cocina", "Cajero(a)", "Delivery", "Otro"]
 CONCEPTOS_CIF = ["Servicios públicos", "Arrendamiento del local", "Mantenimiento de equipos",
                  "Arbitrios", "Otro"]
-PUESTOS_PERSONA = ["Administración", "Caja", "Cocina", "Compras", "Delivery", "Sin asignar"]
+# Puestos que elige cada persona (al registrarse o al ser agregada por el administrador)
+PUESTOS_PERSONA = ["Cajero(a)", "Cocinero(a)", "Ayudante de cocina", "Delivery",
+                   "Limpieza", "Administración", "Compras", "Otro"]
 
 ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
 REGISTRO_USUARIO = {"ventas", "mermas"}
@@ -474,12 +476,18 @@ h1{margin:0;font-size:32px;font-weight:600;color:#1f1a16}
 .tab.on{background:linear-gradient(90deg,var(--p),var(--p-osc));color:#fff;box-shadow:0 8px 18px color-mix(in srgb,var(--p-osc) 30%,transparent)}
 .campo{display:flex;flex-direction:column;gap:8px;font-size:15px;font-weight:500;margin-bottom:16px}
 .caja{position:relative;display:flex;align-items:center}
-.caja > i.ic{position:absolute;left:16px;font-size:20px;color:#8c8076;pointer-events:none}
+.caja > i.ic{position:absolute;left:16px;font-size:20px;color:#8c8076;pointer-events:none;z-index:1}
 input[type=text],input[type=password]{width:100%;height:54px;padding:0 48px;border:1px solid #e3d9cf;border-radius:14px;
   font-size:15px;font-family:inherit;color:var(--tx);background:#fff;transition:border-color .2s,box-shadow .2s}
+select{width:100%;height:54px;padding:0 44px 0 48px;border:1px solid #e3d9cf;border-radius:14px;
+  font-size:15px;font-family:inherit;color:var(--tx);background:#fff;appearance:none;-webkit-appearance:none;cursor:pointer;
+  transition:border-color .2s,box-shadow .2s}
+select:invalid{color:#a79f97}
 input::placeholder{color:#a79f97}
-input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in srgb,var(--p) 14%,transparent)}
+input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in srgb,var(--p) 14%,transparent)}
 .caja:focus-within > i.ic{color:var(--p)}
+.caja.sel::after{content:"";position:absolute;right:20px;top:45%;width:8px;height:8px;border-right:2px solid #9a8a7a;
+  border-bottom:2px solid #9a8a7a;transform:rotate(45deg);pointer-events:none}
 .ver{position:absolute;right:10px;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:#8c8076;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:20px}
 .ver:hover{background:#f6f1ec;color:var(--p)}
@@ -539,7 +547,7 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
   <section class="der">
     {% if vista == 'registro' %}
       <h1>Crear cuenta</h1>
-      <p class="sub">Regístrate para entrar al sistema. Tu cuenta será de tipo Usuario.</p>
+      <p class="sub">Regístrate con tu nombre y tu puesto. Tu cuenta será de tipo Usuario.</p>
     {% else %}
       <h1>Iniciar sesión</h1>
       <p class="sub">Selecciona el tipo de cuenta e ingresa tus datos para continuar.</p>
@@ -564,6 +572,14 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
       <label class="campo">Nombre completo
         <span class="caja"><i class="ti ti-id ic" aria-hidden="true"></i>
           <input type="text" name="nombre" placeholder="Ej. Juan Pérez" autocomplete="name" required maxlength="60"></span>
+      </label>
+
+      <label class="campo">Puesto en el negocio
+        <span class="caja sel"><i class="ti ti-briefcase ic" aria-hidden="true"></i>
+          <select name="puesto" required>
+            <option value="" disabled selected>Selecciona tu puesto</option>
+            {% for pu in puestos_persona %}<option>{{ pu }}</option>{% endfor %}
+          </select></span>
       </label>
       {% endif %}
 
@@ -1325,7 +1341,8 @@ def render_auth(vista="login", tipo="usuario"):
     colores = obtener_colores()
     return render_template_string(AUTH_HTML, vista=vista, tema=tema_css(colores),
                                   csrf_tok=token_csrf(), logo_img=logo_archivo(),
-                                  casa_svg=CASA_SVG, tipo=tipo)
+                                  casa_svg=CASA_SVG, tipo=tipo,
+                                  puestos_persona=PUESTOS_PERSONA)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1373,6 +1390,7 @@ def registro():
             return render_auth("registro")
 
         nombre = request.form.get("nombre", "").strip()
+        puesto = request.form.get("puesto", "")
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "")
         confirmar = request.form.get("confirmar", "")
@@ -1380,6 +1398,8 @@ def registro():
         error = None
         if not 3 <= len(nombre) <= 60:
             error = "Escribe tu nombre completo (entre 3 y 60 caracteres)."
+        elif puesto not in PUESTOS_PERSONA:
+            error = "Selecciona tu puesto en el negocio."
         elif not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
             error = "El nombre de usuario debe tener de 3 a 30 letras, números, punto o guion bajo."
         elif len(clave) < 10 or len(clave) > 128:
@@ -1394,8 +1414,8 @@ def registro():
         try:
             # Las cuentas públicas siempre son de tipo Usuario y quedan activas
             ejecutar("""INSERT INTO cuentas(usuario, clave, rol, nombre, puesto, activo)
-                        VALUES(%s,%s,'usuario',%s,'Sin asignar',1)""",
-                     (usuario, generate_password_hash(clave), nombre))
+                        VALUES(%s,%s,'usuario',%s,%s,1)""",
+                     (usuario, generate_password_hash(clave), nombre, puesto))
         except psycopg2.IntegrityError:
             flash("Ese nombre de usuario ya está en uso. Elige otro.", "error")
             return render_auth("registro")
@@ -1536,7 +1556,7 @@ def crear_persona():
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
     nombre = request.form.get("nombre", "").strip()
-    puesto = request.form.get("puesto", "Sin asignar")
+    puesto = request.form.get("puesto", "")
     usuario = request.form.get("usuario", "").strip()
     clave = request.form.get("clave", "")
     rol = request.form.get("rol", "usuario")
