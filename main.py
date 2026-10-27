@@ -36,9 +36,7 @@ PUESTOS = ["Cocinero(a) principal", "Ayudante de cocina", "Cajero(a)", "Delivery
 CONCEPTOS_CIF = ["Servicios públicos", "Arrendamiento del local", "Mantenimiento de equipos",
                  "Arbitrios", "Otro"]
 
-# Roles de las cuentas de acceso
 ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
-# Tablas que un Usuario (no administrador) puede registrar
 REGISTRO_USUARIO = {"ventas", "mermas"}
 
 CAMPOS = {
@@ -196,20 +194,28 @@ def init_db():
         if con.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0] == 0:
             con.executemany(sql, filas)
 
-    admin_usuario = os.environ.get("ADMIN_USER", "admin")
-    if con.execute("SELECT COUNT(*) FROM cuentas").fetchone()[0] == 0:
-        clave = os.environ.get("ADMIN_PASSWORD")
-        if not clave:
-            clave = secrets.token_urlsafe(10)
-            print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave}")
+    # Cuenta de administrador: si ADMIN_PASSWORD está definida en Render,
+    # esa contraseña se aplica en cada arranque (es la fuente de verdad).
+    admin_usuario = (os.environ.get("ADMIN_USER", "admin") or "admin").strip()
+    clave_env = os.environ.get("ADMIN_PASSWORD", "")
+    fila = con.execute("SELECT id FROM cuentas WHERE usuario=?", (admin_usuario,)).fetchone()
+    if clave_env:
+        if fila:
+            con.execute("UPDATE cuentas SET clave=?, rol='admin' WHERE id=?",
+                        (generate_password_hash(clave_env), fila["id"]))
+        else:
+            con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
+                        (admin_usuario, generate_password_hash(clave_env), "admin"))
+        print(f"[SEGURIDAD] Administrador '{admin_usuario}' listo con ADMIN_PASSWORD.")
+    elif fila is None and con.execute("SELECT COUNT(*) FROM cuentas").fetchone()[0] == 0:
+        clave_temp = secrets.token_urlsafe(10)
         con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
-                    (admin_usuario, generate_password_hash(clave), "admin"))
+                    (admin_usuario, generate_password_hash(clave_temp), "admin"))
+        print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave_temp}")
 
     # Garantiza que siempre exista al menos un administrador
     if con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0] == 0:
-        con.execute("UPDATE cuentas SET rol='admin' WHERE usuario=?", (admin_usuario,))
-        if con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0] == 0:
-            con.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
+        con.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
     con.commit()
     con.close()
 
@@ -389,37 +395,183 @@ LOGIN_HTML = """
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ingresar - La Granja Linda</title>
+<title>Iniciar sesión - La Granja Linda</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 :root{--tx:#2a1a0e;--mu:#7d6b5d}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,"Segoe UI",Arial,sans-serif;
-  background:linear-gradient(160deg,var(--p-cl),#fbf7f2 60%,var(--s-cl));color:var(--tx)}
-.caja{width:min(420px,92vw);background:#fff;border-radius:20px;padding:30px;box-shadow:0 10px 30px rgba(120,60,20,.12)}
-.logo{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,var(--p),var(--p-osc));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;padding:10px}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  font-family:system-ui,"Segoe UI",Arial,sans-serif;color:var(--tx);overflow-x:hidden;position:relative;
+  background:linear-gradient(160deg,var(--p-cl),#faf6f1 55%,var(--s-cl))}
+.halo{position:fixed;border-radius:50%;filter:blur(60px);opacity:.5;z-index:0;pointer-events:none}
+.halo.h1{width:420px;height:420px;background:var(--p-cl2);top:-140px;left:-120px}
+.halo.h2{width:360px;height:360px;background:var(--s-cl2);bottom:-140px;right:-100px}
+
+.shell{position:relative;z-index:1;width:min(980px,100%);min-height:600px;display:grid;grid-template-columns:1fr 1.05fr;
+  background:#fff;border-radius:28px;overflow:hidden;box-shadow:0 24px 60px rgba(120,60,20,.16);animation:entra .6s ease both}
+@keyframes entra{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+
+.izq{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;padding:40px 36px 0;
+  background:linear-gradient(175deg,var(--p-cl),var(--p-cl2));overflow:hidden}
+.logo{width:92px;height:92px;border-radius:24px;background:linear-gradient(135deg,var(--p),var(--p-osc));
+  display:flex;align-items:center;justify-content:center;padding:16px;box-shadow:0 10px 24px rgba(120,60,20,.2)}
 .logo svg,.logo img{width:100%;height:100%;object-fit:contain}
-h1{text-align:center;margin:0;font-size:22px;font-weight:600;color:var(--p-osc)}
-.sub{text-align:center;color:var(--mu);font-size:13px;margin:4px 0 22px}
-label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;margin-bottom:14px}
-input{height:48px;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;font-family:inherit}
-input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px color-mix(in srgb,var(--p) 15%,transparent)}
-button{width:100%;height:48px;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:500;cursor:pointer;background:linear-gradient(90deg,var(--p),var(--p-osc))}
-.flash{background:#fdeeee;color:#a8322d;padding:11px 14px;border-radius:12px;margin-bottom:14px;font-size:13px}
+.izq h2{margin:18px 0 2px;font-size:28px;font-weight:600;color:var(--p-osc)}
+.lema{display:flex;align-items:center;gap:10px;margin:0;font-size:14px;color:var(--p-osc)}
+.lema::before,.lema::after{content:"";width:28px;height:1px;background:var(--p)}
+.desc{margin:16px 0 0;font-size:14px;line-height:1.55;color:#5a4636;max-width:300px}
+.escena{width:100%;margin-top:24px;flex:1;display:flex;align-items:flex-end}
+.escena svg{width:100%;height:auto;display:block}
+.frase{width:calc(100% + 72px);margin:0 -36px;padding:20px 30px 22px;color:#fff;background:var(--p);
+  font-size:18px;font-style:italic;text-align:left;border-radius:60% 40% 0 0 / 40% 30% 0 0;
+  box-shadow:0 -6px 18px rgba(0,0,0,.05)}
+
+.der{position:relative;padding:48px 52px 34px;display:flex;flex-direction:column;justify-content:center}
+.der::before{content:"";position:absolute;right:-30px;top:-20px;width:150px;height:110px;
+  background:radial-gradient(ellipse at center,var(--p-cl2) 0 30%,transparent 70%);opacity:.6;pointer-events:none}
+h1{margin:0;font-size:32px;font-weight:600;color:#1f1a16}
+.sub{margin:10px 0 24px;font-size:15px;color:var(--mu);line-height:1.5}
+
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;background:#f6f1ec;border-radius:16px;margin-bottom:22px}
+.tab{height:50px;border:0;border-radius:12px;background:transparent;color:#4a3a2e;font-size:15px;font-weight:500;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit;transition:background .25s,color .25s,transform .15s}
+.tab i{font-size:20px}
+.tab:hover{transform:translateY(-1px)}
+.tab.on{background:linear-gradient(90deg,var(--p),var(--p-osc));color:#fff;box-shadow:0 8px 18px color-mix(in srgb,var(--p-osc) 30%,transparent)}
+
+.campo{display:flex;flex-direction:column;gap:8px;font-size:15px;font-weight:500;margin-bottom:16px}
+.caja{position:relative;display:flex;align-items:center}
+.caja > i.ic{position:absolute;left:16px;font-size:20px;color:#8c8076;pointer-events:none}
+input[type=text],input[type=password]{width:100%;height:54px;padding:0 48px;border:1px solid #e3d9cf;border-radius:14px;
+  font-size:15px;font-family:inherit;color:var(--tx);background:#fff;transition:border-color .2s,box-shadow .2s}
+input::placeholder{color:#a79f97}
+input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in srgb,var(--p) 14%,transparent)}
+.caja:focus-within > i.ic{color:var(--p)}
+.ver{position:absolute;right:10px;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:#8c8076;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:20px}
+.ver:hover{background:#f6f1ec;color:var(--p)}
+
+.fila{display:flex;justify-content:space-between;align-items:center;margin:4px 0 22px;font-size:14px}
+.rec{display:flex;align-items:center;gap:10px;color:#4a3a2e;cursor:pointer}
+.rec input{width:18px;height:18px;accent-color:var(--p);margin:0}
+.olvide{color:var(--p-osc);text-decoration:underline;text-underline-offset:3px}
+
+.entrar{width:100%;height:56px;border:0;border-radius:16px;color:#fff;font-size:17px;font-weight:500;cursor:pointer;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;gap:12px;background:linear-gradient(90deg,var(--p),var(--p-osc));
+  box-shadow:0 12px 24px color-mix(in srgb,var(--p-osc) 30%,transparent);transition:transform .15s,filter .2s}
+.entrar:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.entrar:active{transform:scale(.98)}
+.entrar i{font-size:22px}
+
+.pie{margin:26px 0 0;padding-top:20px;border-top:1px solid #efe7de;text-align:center;font-size:14px;color:var(--mu)}
+.pie b{color:var(--p-osc);font-weight:500}
+
+.flash{background:#fdeeee;color:#a8322d;padding:12px 16px;border-radius:12px;margin-bottom:18px;font-size:14px}
+
+@media(max-width:820px){
+  .shell{grid-template-columns:1fr;min-height:0}
+  .izq{padding:28px 24px 0}
+  .escena{display:none}
+  .frase{font-size:16px;padding:16px 24px}
+  .der{padding:32px 26px 28px}
+  h1{font-size:26px}
+}
 </style>
 <style>{{ tema|safe }}</style>
 </head>
 <body>
-<form class="caja" method="post" action="{{ url_for('login') }}">
-  <div class="logo">{% if logo_img %}<img src="{{ logo_img }}" alt="Logo">{% else %}{{ casa_svg|safe }}{% endif %}</div>
-  <h1>La Granja Linda</h1>
-  <p class="sub">Inicia sesión para continuar</p>
-  {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash">{{ m }}</div>{% endfor %}
-  <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-  <label>Usuario<input type="text" name="usuario" autocomplete="username" required maxlength="50"></label>
-  <label>Contraseña<input type="password" name="clave" autocomplete="current-password" required maxlength="200"></label>
-  <button type="submit"><i class="ti ti-login-2" aria-hidden="true"></i> Entrar</button>
-</form>
+<div class="halo h1"></div>
+<div class="halo h2"></div>
+
+<main class="shell">
+  <section class="izq">
+    <div class="logo">{% if logo_img %}<img src="{{ logo_img }}" alt="Logo">{% else %}{{ casa_svg|safe }}{% endif %}</div>
+    <h2>La Granja Linda</h2>
+    <p class="lema">Tu granja, nuestra prioridad</p>
+    <p class="desc">Gestiona costos, mermas y presupuestos de manera fácil, segura y eficiente.</p>
+
+    <div class="escena" aria-hidden="true">
+      <svg viewBox="0 0 360 220">
+        <rect x="0" y="168" width="360" height="60" fill="#e9bd93" opacity=".55"/>
+        <rect x="80" y="112" width="200" height="72" rx="4" fill="#fffaf4" stroke="#e7d2bd" stroke-width="2"/>
+        <path d="M58 118 L180 40 L302 118 Z" style="fill:var(--p-osc)"/>
+        <rect x="104" y="132" width="34" height="26" rx="2" fill="#f3d9bf"/>
+        <rect x="222" y="132" width="34" height="26" rx="2" fill="#f3d9bf"/>
+        <rect x="164" y="136" width="32" height="48" rx="2" style="fill:var(--p)"/>
+        <circle cx="290" cy="190" r="11" fill="none" stroke="#b8aca0" stroke-width="5"/>
+        <rect x="300" y="186" width="44" height="6" rx="3" fill="#b8aca0"/>
+        <rect x="330" y="192" width="5" height="10" rx="2" fill="#b8aca0"/>
+      </svg>
+    </div>
+    <div class="frase">Más que una granja,<br>una familia</div>
+  </section>
+
+  <section class="der">
+    <h1>Iniciar sesión</h1>
+    <p class="sub">Selecciona el tipo de cuenta e ingresa tus datos para continuar.</p>
+
+    {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash">{{ m }}</div>{% endfor %}
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab {{ 'on' if tipo == 'usuario' else '' }}" data-tipo="usuario" role="tab">
+        <i class="ti ti-user" aria-hidden="true"></i>Usuario</button>
+      <button type="button" class="tab {{ 'on' if tipo == 'admin' else '' }}" data-tipo="admin" role="tab">
+        <i class="ti ti-shield-check" aria-hidden="true"></i>Administrador</button>
+    </div>
+
+    <form method="post" action="{{ url_for('login') }}" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <input type="hidden" name="tipo" id="tipo" value="{{ tipo }}">
+
+      <label class="campo">Usuario
+        <span class="caja"><i class="ti ti-user ic" aria-hidden="true"></i>
+          <input type="text" name="usuario" placeholder="Ingresa tu usuario" autocomplete="username" required maxlength="50"></span>
+      </label>
+
+      <label class="campo">Contraseña
+        <span class="caja"><i class="ti ti-lock ic" aria-hidden="true"></i>
+          <input type="password" name="clave" id="clave" placeholder="Ingresa tu contraseña" autocomplete="current-password" required maxlength="200">
+          <button type="button" class="ver" id="ver" aria-label="Mostrar u ocultar contraseña"><i class="ti ti-eye" aria-hidden="true"></i></button></span>
+      </label>
+
+      <div class="fila">
+        <label class="rec"><input type="checkbox"> Recordarme</label>
+        <a href="#" class="olvide" id="olvide">¿Olvidaste tu contraseña?</a>
+      </div>
+
+      <button class="entrar" type="submit"><i class="ti ti-login-2" aria-hidden="true"></i>Iniciar sesión</button>
+    </form>
+
+    <p class="pie">¿No tienes una cuenta? <b>Contacta al administrador</b></p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  var tipo = document.getElementById('tipo');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.remove('on'); });
+      t.classList.add('on');
+      tipo.value = t.getAttribute('data-tipo');
+    });
+  });
+
+  var ver = document.getElementById('ver');
+  var clave = document.getElementById('clave');
+  ver.addEventListener('click', function () {
+    var oculta = clave.type === 'password';
+    clave.type = oculta ? 'text' : 'password';
+    ver.innerHTML = '<i class="ti ' + (oculta ? 'ti-eye-off' : 'ti-eye') + '" aria-hidden="true"></i>';
+  });
+
+  document.getElementById('olvide').addEventListener('click', function (e) {
+    e.preventDefault();
+    alert('Pide a tu administrador que restablezca tu contraseña.');
+  });
+})();
+</script>
 </body>
 </html>
 """
@@ -1132,26 +1284,36 @@ document.addEventListener('pointerdown', function (e) {
 
 
 # ---------- Acceso ----------
-def render_login():
+def render_login(tipo="usuario"):
     colores = obtener_colores()
     return render_template_string(LOGIN_HTML, tema=tema_css(colores), csrf_tok=token_csrf(),
-                                  logo_img=logo_archivo(), casa_svg=CASA_SVG)
+                                  logo_img=logo_archivo(), casa_svg=CASA_SVG, tipo=tipo)
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     token_csrf()
     if request.method == "POST":
+        tipo = request.form.get("tipo", "usuario")
+    else:
+        tipo = request.args.get("tipo", "usuario")
+    if tipo not in ("usuario", "admin"):
+        tipo = "usuario"
+
+    if request.method == "POST":
         ip = ip_actual()
         if bloqueado(ip):
             flash("Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo.", "error")
-            return render_login()
+            return render_login(tipo)
         usuario = request.form.get("usuario", "").strip()[:50]
         clave = request.form.get("clave", "")[:200]
         con = conectar()
         fila = con.execute("SELECT * FROM cuentas WHERE usuario=?", (usuario,)).fetchone()
         con.close()
         if fila and check_password_hash(fila["clave"], clave):
+            if tipo == "admin" and fila["rol"] != "admin":
+                flash("Esta cuenta no es de administrador. Selecciona la pestaña Usuario.", "error")
+                return render_login(tipo)
             intentos.pop(ip, None)
             session.clear()
             session.permanent = True
@@ -1161,7 +1323,7 @@ def login():
             return redirect(url_for("index"))
         registrar_fallo(ip)
         flash("Usuario o contraseña incorrectos.", "error")
-    return render_login()
+    return render_login(tipo)
 
 
 @app.route("/salir", methods=["POST"])
