@@ -1,17 +1,31 @@
 import csv
+import hmac
 import io
 import math
 import os
 import re
+import secrets
 import sqlite3
-from datetime import date
+import time
+from datetime import date, timedelta
 
-from flask import (Flask, Response, abort, flash, get_flashed_messages,
-                   redirect, render_template_string, request, url_for)
+from flask import (Flask, Response, abort, flash, get_flashed_messages, redirect,
+                   render_template_string, request, session, url_for)
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "cambiar-esta-clave")
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SEGURA", "1") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
+    MAX_CONTENT_LENGTH=64 * 1024,
+)
 DB = os.environ.get("DB_PATH", "granja_linda.db")
+MAX_INTENTOS = 5
+VENTANA_BLOQUEO = 15 * 60
+intentos = {}  # ip -> (cantidad de fallos, momento del primer fallo)
 
 COMISION_APPS = 0.18
 CANALES = ["Salón", "Delivery propio", "Apps de delivery", "Llevar (take away)"]
@@ -21,6 +35,11 @@ ROLES = ["Administrador", "Caja", "Cocina", "Compras"]
 PUESTOS = ["Cocinero(a) principal", "Ayudante de cocina", "Cajero(a)", "Delivery", "Otro"]
 CONCEPTOS_CIF = ["Servicios públicos", "Arrendamiento del local", "Mantenimiento de equipos",
                  "Arbitrios", "Otro"]
+
+# Roles de las cuentas de acceso
+ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
+# Tablas que un Usuario (no administrador) puede registrar
+REGISTRO_USUARIO = {"ventas", "mermas"}
 
 CAMPOS = {
     "ventas": [("fecha", "Fecha", "fecha", None), ("plato", "Plato", "texto", None),
@@ -153,7 +172,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS costos_cif (id INTEGER PRIMARY KEY, concepto TEXT, monto REAL);
         CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT, rol TEXT, activo INTEGER DEFAULT 1);
         CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT);
+        CREATE TABLE IF NOT EXISTS cuentas (id INTEGER PRIMARY KEY, usuario TEXT UNIQUE NOT NULL,
+            clave TEXT NOT NULL, rol TEXT NOT NULL DEFAULT 'usuario');
     """)
+    # Migración: bases creadas antes de existir el campo rol
+    columnas = [r[1] for r in con.execute("PRAGMA table_info(cuentas)")]
+    if "rol" not in columnas:
+        con.execute("ALTER TABLE cuentas ADD COLUMN rol TEXT NOT NULL DEFAULT 'usuario'")
+
     semillas = {
         "platos": ("INSERT INTO platos(nombre,costo,precio) VALUES(?,?,?)", [
             ("1/4 Pollo", 22, 38), ("Pollo entero", 75, 115), ("Parrilla familiar", 110, 180)]),
@@ -169,6 +195,21 @@ def init_db():
     for tabla, (sql, filas) in semillas.items():
         if con.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0] == 0:
             con.executemany(sql, filas)
+
+    admin_usuario = os.environ.get("ADMIN_USER", "admin")
+    if con.execute("SELECT COUNT(*) FROM cuentas").fetchone()[0] == 0:
+        clave = os.environ.get("ADMIN_PASSWORD")
+        if not clave:
+            clave = secrets.token_urlsafe(10)
+            print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave}")
+        con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
+                    (admin_usuario, generate_password_hash(clave), "admin"))
+
+    # Garantiza que siempre exista al menos un administrador
+    if con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0] == 0:
+        con.execute("UPDATE cuentas SET rol='admin' WHERE usuario=?", (admin_usuario,))
+        if con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0] == 0:
+            con.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
     con.commit()
     con.close()
 
@@ -227,6 +268,8 @@ def valor_de(tipo, texto, etiqueta):
     if tipo in ("texto", "fecha"):
         if not texto:
             raise ValueError(f"'{etiqueta}' no puede estar vacío.")
+        if len(texto) > 100:
+            raise ValueError(f"'{etiqueta}' es demasiado largo.")
         return texto
     try:
         v = float(texto.replace(",", "."))
@@ -250,7 +293,139 @@ def logo_archivo():
     return "/static/logo.png" if os.path.exists(ruta) else None
 
 
-# ---------- Plantilla ----------
+# ---------- Seguridad: sesión, roles, intentos y CSRF ----------
+def token_csrf():
+    """Token secreto ligado a la sesión; cada formulario POST debe enviarlo."""
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
+    return session["csrf"]
+
+
+def ip_actual():
+    return request.remote_addr or "desconocida"
+
+
+def bloqueado(ip):
+    ahora = time.time()
+    n, desde = intentos.get(ip, (0, ahora))
+    if ahora - desde > VENTANA_BLOQUEO:
+        intentos.pop(ip, None)
+        return False
+    return n >= MAX_INTENTOS
+
+
+def registrar_fallo(ip):
+    ahora = time.time()
+    n, desde = intentos.get(ip, (0, ahora))
+    if ahora - desde > VENTANA_BLOQUEO:
+        n, desde = 0, ahora
+    intentos[ip] = (n + 1, desde)
+
+
+def es_admin():
+    return session.get("rol") == "admin"
+
+
+def solo_admin():
+    """Devuelve True (y avisa) si quien actúa no es administrador."""
+    if not es_admin():
+        flash("Esta acción solo la puede hacer el administrador.", "error")
+        return True
+    return False
+
+
+def contar_admins(con):
+    return con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0]
+
+
+PUBLICAS = {"login", "static"}
+
+
+@app.before_request
+def control_acceso():
+    session.permanent = True
+    if request.method == "POST":
+        enviado = request.form.get("csrf_token", "")
+        esperado = session.get("csrf", "")
+        if not esperado or not hmac.compare_digest(enviado, esperado):
+            session.clear()
+            flash("Tu sesión expiró o el formulario no es válido. Inicia sesión de nuevo.", "error")
+            return redirect(url_for("login"))
+    if request.endpoint in PUBLICAS:
+        return None
+    if "usuario" not in session:
+        return redirect(url_for("login"))
+    # Relee el rol y confirma que la cuenta todavía existe
+    con = conectar()
+    fila = con.execute("SELECT rol FROM cuentas WHERE usuario=?", (session["usuario"],)).fetchone()
+    con.close()
+    if not fila:
+        session.clear()
+        return redirect(url_for("login"))
+    session["rol"] = fila["rol"]
+    return None
+
+
+@app.after_request
+def cabeceras_seguridad(resp):
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "same-origin"
+    resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data:; "
+        "frame-ancestors 'none'; form-action 'self'; base-uri 'self'")
+    if "usuario" in session:
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+# ---------- Plantilla de inicio de sesión ----------
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingresar - La Granja Linda</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root{--tx:#2a1a0e;--mu:#7d6b5d}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,"Segoe UI",Arial,sans-serif;
+  background:linear-gradient(160deg,var(--p-cl),#fbf7f2 60%,var(--s-cl));color:var(--tx)}
+.caja{width:min(420px,92vw);background:#fff;border-radius:20px;padding:30px;box-shadow:0 10px 30px rgba(120,60,20,.12)}
+.logo{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,var(--p),var(--p-osc));display:flex;align-items:center;justify-content:center;margin:0 auto 12px;padding:10px}
+.logo svg,.logo img{width:100%;height:100%;object-fit:contain}
+h1{text-align:center;margin:0;font-size:22px;font-weight:600;color:var(--p-osc)}
+.sub{text-align:center;color:var(--mu);font-size:13px;margin:4px 0 22px}
+label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:500;margin-bottom:14px}
+input{height:48px;padding:0 14px;border:1px solid #e6d8c6;border-radius:12px;font-size:14px;font-family:inherit}
+input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px color-mix(in srgb,var(--p) 15%,transparent)}
+button{width:100%;height:48px;border:0;border-radius:12px;color:#fff;font-size:15px;font-weight:500;cursor:pointer;background:linear-gradient(90deg,var(--p),var(--p-osc))}
+.flash{background:#fdeeee;color:#a8322d;padding:11px 14px;border-radius:12px;margin-bottom:14px;font-size:13px}
+</style>
+<style>{{ tema|safe }}</style>
+</head>
+<body>
+<form class="caja" method="post" action="{{ url_for('login') }}">
+  <div class="logo">{% if logo_img %}<img src="{{ logo_img }}" alt="Logo">{% else %}{{ casa_svg|safe }}{% endif %}</div>
+  <h1>La Granja Linda</h1>
+  <p class="sub">Inicia sesión para continuar</p>
+  {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash">{{ m }}</div>{% endfor %}
+  <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+  <label>Usuario<input type="text" name="usuario" autocomplete="username" required maxlength="50"></label>
+  <label>Contraseña<input type="password" name="clave" autocomplete="current-password" required maxlength="200"></label>
+  <button type="submit"><i class="ti ti-login-2" aria-hidden="true"></i> Entrar</button>
+</form>
+</body>
+</html>
+"""
+
+
+# ---------- Plantilla principal ----------
 PLANTILLA = """
 <!DOCTYPE html>
 <html lang="es">
@@ -267,7 +442,6 @@ PLANTILLA = """
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--tx);font-size:14px;
   display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh;overflow-x:hidden}
 
-/* Animación de fondo */
 .fondo-anim{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none}
 .fondo-anim .blob{position:absolute;border-radius:50%;filter:blur(40px);opacity:.55;animation:respira 14s ease-in-out infinite}
 .fondo-anim .b1{width:420px;height:420px;background:var(--p-cl2);top:-120px;right:-80px}
@@ -282,7 +456,6 @@ body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(-
 @keyframes respira{0%,100%{transform:scale(1) translate(0,0)}50%{transform:scale(1.12) translate(20px,-14px)}}
 @keyframes flota{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-26px) rotate(14deg)}}
 
-/* Halo que sigue el cursor */
 #cursor-glow{position:fixed;left:0;top:0;width:320px;height:320px;border-radius:50%;pointer-events:none;z-index:0;
   background:radial-gradient(circle,color-mix(in srgb,var(--p) 16%,transparent),transparent 70%);opacity:0;transition:opacity .4s;will-change:transform}
 
@@ -294,9 +467,12 @@ header{grid-column:1/-1;background:linear-gradient(90deg,var(--p),var(--p-osc));
 .marca img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:12px;padding:4px}
 .marca h1{margin:0;font-size:21px;font-weight:500}
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fff;opacity:.85;text-transform:uppercase;margin-top:2px}
-.derecha{display:flex;align-items:center;gap:14px;font-size:13px;color:#fff}
+.derecha{display:flex;align-items:center;gap:12px;font-size:13px;color:#fff;flex-wrap:wrap}
+.quien{text-align:right;line-height:1.25}
+.quien b{display:block;font-weight:600}
+.quien span{font-size:12px;opacity:.9}
 .avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px}
-.engranaje{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.22);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;text-decoration:none;transition:transform .3s,background .2s}
+.engranaje{width:40px;height:40px;border-radius:50%;border:0;padding:0;cursor:pointer;background:rgba(255,255,255,.22);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;text-decoration:none;transition:transform .3s,background .2s}
 .engranaje:hover{background:rgba(255,255,255,.35);transform:rotate(60deg)}
 .engranaje.activo{background:#fff;color:var(--p)}
 nav{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;z-index:2;background:linear-gradient(180deg,var(--p-cl),var(--p-cl2));padding:20px 14px;display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--p-cl2)}
@@ -308,13 +484,11 @@ nav a.activo{background:var(--p);color:#fff;font-weight:500}
 .decor-menu svg{width:100%;height:auto;display:block}
 main{min-width:0;padding:22px 26px;max-width:1180px;width:100%;position:relative;z-index:1}
 
-/* Entrada suave */
 main > *{animation:sube .5s ease both}
 main > *:nth-child(2){animation-delay:.05s}
 main > *:nth-child(3){animation-delay:.1s}
 @keyframes sube{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 
-/* Tarjetas */
 .card{background:#fff;border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 2px 14px rgba(120,60,20,.07);overflow:hidden;transition:transform .25s,box-shadow .25s}
 .card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(120,60,20,.12)}
 .banner{display:flex;align-items:center;gap:16px;padding:18px 20px;margin:-18px -18px 18px;position:relative;overflow:hidden}
@@ -339,7 +513,6 @@ main > *:nth-child(3){animation-delay:.1s}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}#cursor-glow{display:none}}
 
-/* Panel principal */
 .hero{position:relative;overflow:hidden;background:#fff;border-radius:18px;padding:24px 26px;display:flex;align-items:center;gap:18px;margin-bottom:18px;min-height:170px;box-shadow:0 2px 14px rgba(120,60,20,.07)}
 .hero .txt{position:relative;z-index:2;display:flex;align-items:center;gap:18px}
 .hero small{color:var(--mu);font-size:14px;display:block}
@@ -370,7 +543,6 @@ main > *:nth-child(3){animation-delay:.1s}
 .filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--ln);font-size:13px}
 .filas div:last-child{border-bottom:none}
 
-/* Formularios */
 form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 18px;margin-bottom:6px;align-items:end}
 .campo{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--tx);font-weight:500}
 .campo .lbl{display:flex;align-items:center;gap:8px}
@@ -389,7 +561,6 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .azul input:focus,.azul select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 15%,transparent)}
 .accion{grid-column:1/-1;display:flex;align-items:center;gap:14px}
 
-/* Botones */
 .btn,.btn-sec,button{position:relative;overflow:hidden}
 .btn{height:48px;padding:0 18px;border-radius:12px;border:none;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,var(--p),var(--p-osc));box-shadow:0 6px 14px color-mix(in srgb,var(--p-osc) 30%,transparent);transition:transform .15s,filter .2s,box-shadow .2s}
 .btn:hover{filter:brightness(1.06);box-shadow:0 10px 20px color-mix(in srgb,var(--p-osc) 38%,transparent);transform:translateY(-1px)}
@@ -398,6 +569,7 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .btn.verde:hover{box-shadow:0 10px 20px color-mix(in srgb,var(--s-osc) 38%,transparent)}
 .btn.azul{background:linear-gradient(90deg,var(--a),var(--a-osc));box-shadow:0 6px 14px color-mix(in srgb,var(--a-osc) 30%,transparent)}
 .btn.rojo{background:linear-gradient(90deg,#ef7a6b,#c0392b);box-shadow:0 6px 14px rgba(192,57,43,.25)}
+.btn.gris{background:linear-gradient(90deg,#9a8a7a,#6b5a4a);box-shadow:0 6px 14px rgba(107,90,74,.25)}
 .btn i{font-size:18px}
 .btn .flecha{font-size:16px;opacity:.9;transition:transform .25s}
 .btn:hover .flecha{transform:translateX(4px)}
@@ -409,12 +581,10 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .btn-sec.azul:hover{background:var(--a-cl)}
 .btn-sec i{font-size:16px}
 
-/* Onda al presionar */
 .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:onda .6s ease-out forwards;pointer-events:none}
 .btn-sec .ripple{background:color-mix(in srgb,var(--p) 22%,transparent)}
 @keyframes onda{to{transform:scale(1);opacity:0}}
 
-/* Tablas */
 .tabla-wrap{border:1px solid var(--ln);border-radius:14px;overflow:hidden;margin-top:16px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-size:13px;color:var(--tx);font-weight:500;padding:12px 16px;background:var(--p-cl);border-bottom:1px solid var(--ln)}
@@ -424,6 +594,7 @@ td{padding:12px 16px;border-bottom:1px solid #f4ece3;transition:background .2s}
 tbody tr:hover td,table tr:hover td{background:#fffaf5}
 tr:last-child td{border-bottom:none}
 td.acc{text-align:right;width:130px}
+td.acc form{display:inline-block;margin-left:4px}
 .res{background:var(--p-cl);color:var(--p-osc);border-radius:12px;padding:14px 16px;margin-top:14px;font-weight:500}
 .total{display:flex;align-items:center;gap:16px;border-radius:16px;padding:18px 20px;margin-top:16px;color:#fff;position:relative;overflow:hidden}
 .total.naranja{background:linear-gradient(90deg,var(--p),var(--p-osc))}
@@ -432,12 +603,11 @@ td.acc{text-align:right;width:130px}
 .total small{font-size:13px;opacity:.9;display:block}
 .total b{font-size:26px;font-weight:500}
 .total .tend{position:absolute;right:22px;top:50%;transform:translateY(-50%);font-size:34px;opacity:.85}
+.solo-lectura{font-size:12px;color:var(--mu);margin:12px 0 0}
 
-/* Mensajes */
 .flash{background:var(--rj-f);color:var(--rj-t);padding:12px 16px;border-radius:12px;margin-bottom:14px}
 .flash.ok{background:var(--s-cl);color:var(--s-osc)}
 
-/* Apariencia */
 .paletas{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
 .paleta{border:1px solid var(--ln);border-radius:14px;padding:14px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .paleta:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(120,60,20,.12)}
@@ -485,8 +655,10 @@ td.acc{text-align:right;width:130px}
 {% endmacro %}
 
 {% macro registro(tabla, campos, columnas, filas, color='naranja', boton='Agregar') %}
+  {% if es_admin or tabla in ['ventas', 'mermas'] %}
   <form class="reg {{ color }}" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
     <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
     {% for n, e, t, opciones in campos %}
       <label class="campo">
         <span class="lbl"><i class="ti ti-{{ iconos.get(n, 'point') }}" aria-hidden="true"></i>{{ e }}</span>
@@ -500,7 +672,7 @@ td.acc{text-align:right;width:130px}
         {% elif t == 'fecha' %}
           <span class="caja"><input type="date" name="{{ n }}" value="{{ hoy }}" required></span>
         {% elif t == 'texto' %}
-          <span class="caja"><input type="text" name="{{ n }}" placeholder="Ingresa {{ e|lower }}" required></span>
+          <span class="caja"><input type="text" name="{{ n }}" maxlength="100" placeholder="Ingresa {{ e|lower }}" required></span>
         {% else %}
           <span class="caja"><input type="number" name="{{ n }}" min="0" step="{{ '1' if t == 'entero' else 'any' }}" placeholder="Ingresa {{ e|lower }}" required></span>
         {% endif %}
@@ -510,19 +682,23 @@ td.acc{text-align:right;width:130px}
       <button class="btn {{ color }}" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>{{ boton }}<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button>
     </div>
   </form>
+  {% endif %}
   {% if columnas %}
   <div class="tabla-wrap">
   <table>
-    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th></tr>
+    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
       {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
+      {% if es_admin %}
       <td class="acc">
-        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" style="display:inline">
+        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
           <input type="hidden" name="tab" value="{{ tab }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
           <button class="btn-sec {{ color }}" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
         </form>
       </td>
+      {% endif %}
     </tr>
     {% endfor %}
   </table>
@@ -542,7 +718,12 @@ td.acc{text-align:right;width:130px}
   <div class="derecha">
     <span>{{ ico('calendar') }} Octubre 2026 · Nuevo Chimbote</span>
     <a href="{{ url_for('index', tab='configuracion') }}" class="engranaje{{ ' activo' if tab=='configuracion' else '' }}" title="Configuración" aria-label="Configuración"><i class="ti ti-settings" aria-hidden="true"></i></a>
-    <div class="avatar">{{ ico('user') }}</div>
+    <form method="post" action="{{ url_for('salir') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <button class="engranaje" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ti ti-logout" aria-hidden="true"></i></button>
+    </form>
+    <div class="quien"><b>{{ usuario }}</b><span>{{ rol_txt }}</span></div>
+    <div class="avatar" title="{{ usuario }} ({{ rol_txt }})">{{ ico('user') }}</div>
   </div>
 </header>
 
@@ -733,39 +914,102 @@ td.acc{text-align:right;width:130px}
 
 {% if tab == 'usuarios' %}
   <div class="card">
-    {{ banner('users', 'Usuarios del sistema', 'Personas con acceso y su rol en el negocio', 'naranja') }}
+    {{ banner('users', 'Usuarios del sistema', 'Personas del equipo y su rol en el negocio', 'naranja') }}
     <div class="tabla-wrap">
     <table>
-      <tr><th>Nombre</th><th>Rol</th><th>Estado</th><th></th></tr>
+      <tr><th>Nombre</th><th>Rol</th><th>Estado</th>{% if es_admin %}<th></th>{% endif %}</tr>
       {% for u in usuarios %}
       <tr>
         <td>{{ u['nombre'] }}</td><td>{{ u['rol'] }}</td>
         <td>{{ 'Activo' if u['activo'] else 'Inactivo' }}</td>
+        {% if es_admin %}
         <td class="acc">
           <form method="post" action="{{ url_for('toggle_usuario', id_=u['id']) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
             <button class="btn-sec" type="submit">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
           </form>
           <form method="post" action="{{ url_for('eliminar', tabla='usuarios', id_=u['id']) }}" style="display:inline">
             <input type="hidden" name="tab" value="usuarios">
+            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
             <button class="btn-sec" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
           </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    {% if not es_admin %}<p class="solo-lectura">Solo el administrador puede agregar, activar o eliminar personas.</p>{% endif %}
+  </div>
+
+  {% if es_admin %}
+  <div class="card">
+    {{ banner('user-plus', 'Agregar persona al equipo', 'Registra una persona del negocio (caja, cocina, compras)', 'verde') }}
+    {{ registro('usuarios', campos.usuarios, [], [], 'verde', 'Agregar persona') }}
+  </div>
+
+  <div class="card">
+    {{ banner('key', 'Cuentas de acceso', 'Crea cuentas para iniciar sesión. El administrador puede hacer todo; el usuario puede ver todo y registrar ventas y mermas.', 'naranja') }}
+    <form class="reg" method="post" action="{{ url_for('crear_cuenta') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Nombre de usuario</span>
+        <span class="caja"><input type="text" name="usuario" maxlength="30" pattern="[A-Za-z0-9_.]{3,30}" placeholder="Ej. caja1" required></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Contraseña inicial</span>
+        <span class="caja"><input type="password" name="clave" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Mínimo 10 caracteres" required></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-shield" aria-hidden="true"></i>Rol</span>
+        <span class="caja sel"><select name="rol" required>
+          <option value="usuario">Usuario</option>
+          <option value="admin">Administrador</option>
+        </select></span></label>
+      <div class="accion"><button class="btn" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>Crear cuenta<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
+    <div class="tabla-wrap">
+    <table>
+      <tr><th>Usuario</th><th>Rol</th><th></th></tr>
+      {% for c in cuentas %}
+      <tr>
+        <td>{{ c['usuario'] }}{% if c['usuario'] == usuario %} <small style="color:var(--mu)">(tú)</small>{% endif %}</td>
+        <td>{{ 'Administrador' if c['rol'] == 'admin' else 'Usuario' }}</td>
+        <td class="acc">
+          {% if c['usuario'] != usuario %}
+          <form method="post" action="{{ url_for('cambiar_rol', id_=c['id']) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+            <button class="btn-sec" type="submit">{{ 'Hacer usuario' if c['rol'] == 'admin' else 'Hacer administrador' }}</button>
+          </form>
+          <form method="post" action="{{ url_for('eliminar_cuenta', id_=c['id']) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+            <button class="btn-sec" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
     </table>
     </div>
   </div>
+
   <div class="card">
-    {{ banner('user-plus', 'Agregar usuario', 'Registra una persona con acceso al sistema', 'verde') }}
-    {{ registro('usuarios', campos.usuarios, [], [], 'verde', 'Agregar usuario') }}
+    {{ banner('lock', 'Restablecer contraseña', 'Asigna una nueva contraseña a una cuenta existente', 'azul') }}
+    <form class="reg azul" method="post" action="{{ url_for('restablecer_clave') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Cuenta</span>
+        <span class="caja sel"><select name="cuenta_id" required>
+          {% for c in cuentas %}<option value="{{ c['id'] }}">{{ c['usuario'] }}</option>{% endfor %}
+        </select></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Nueva contraseña</span>
+        <span class="caja"><input type="password" name="nueva" minlength="10" maxlength="128" autocomplete="new-password" required></span></label>
+      <div class="accion"><button class="btn azul" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i>Guardar contraseña<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
   </div>
+  {% endif %}
 {% endif %}
 
 {% if tab == 'configuracion' %}
+  {% if es_admin %}
   <div class="card">
     {{ banner('palette', 'Apariencia', 'Elige los colores de la aplicación. Se aplican a todas las secciones y a todos los usuarios.', 'naranja') }}
     <form class="reg" method="post" action="{{ url_for('guardar_colores') }}">
-      <input type="hidden" name="tab" value="configuracion">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       <label class="campo"><span class="lbl"><i class="ti ti-color-picker" aria-hidden="true"></i>Color principal</span>
         <span class="caja"><input type="color" name="principal" id="c_principal" value="{{ colores.principal }}"></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-color-picker" aria-hidden="true"></i>Color secundario</span>
@@ -777,7 +1021,7 @@ td.acc{text-align:right;width:130px}
       </div>
     </form>
     <form method="post" action="{{ url_for('restaurar_colores') }}" style="margin-top:12px">
-      <input type="hidden" name="tab" value="configuracion">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       <button class="btn-sec" type="submit"><i class="ti ti-refresh" aria-hidden="true"></i>Restaurar colores originales</button>
     </form>
   </div>
@@ -810,11 +1054,25 @@ td.acc{text-align:right;width:130px}
       </div>
     </div>
   </div>
+  {% endif %}
+
+  <div class="card">
+    {{ banner('lock', 'Mi contraseña', 'Cambia la contraseña de tu cuenta. Debe tener al menos 10 caracteres.', 'gris') }}
+    <form class="reg" method="post" action="{{ url_for('cambiar_clave') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Contraseña actual</span>
+        <span class="caja"><input type="password" name="actual" autocomplete="current-password" required maxlength="200"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Nueva contraseña</span>
+        <span class="caja"><input type="password" name="nueva" autocomplete="new-password" required minlength="10" maxlength="128"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Repite la nueva</span>
+        <span class="caja"><input type="password" name="confirmar" autocomplete="new-password" required minlength="10" maxlength="128"></span></label>
+      <div class="accion"><button class="btn gris" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i>Cambiar contraseña<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
+  </div>
 {% endif %}
 </main>
 
 <script>
-// Halo que sigue el cursor (solo en computadora y si no se pide movimiento reducido)
 (function () {
   var glow = document.getElementById('cursor-glow');
   var reducir = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -831,7 +1089,6 @@ td.acc{text-align:right;width:130px}
   })();
 })();
 
-// Onda al presionar botones y enlaces del menú
 document.addEventListener('pointerdown', function (e) {
   var b = e.target.closest('button, .btn, .btn-sec, nav a, .engranaje');
   if (!b || b.disabled) return;
@@ -846,7 +1103,6 @@ document.addEventListener('pointerdown', function (e) {
   setTimeout(function () { r.remove(); }, 650);
 });
 
-// Vista previa de colores en vivo
 (function () {
   var ids = ['c_principal', 'c_secundario', 'c_acento'];
   var pv = document.getElementById('preview');
@@ -875,6 +1131,68 @@ document.addEventListener('pointerdown', function (e) {
 """
 
 
+# ---------- Acceso ----------
+def render_login():
+    colores = obtener_colores()
+    return render_template_string(LOGIN_HTML, tema=tema_css(colores), csrf_tok=token_csrf(),
+                                  logo_img=logo_archivo(), casa_svg=CASA_SVG)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    token_csrf()
+    if request.method == "POST":
+        ip = ip_actual()
+        if bloqueado(ip):
+            flash("Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo.", "error")
+            return render_login()
+        usuario = request.form.get("usuario", "").strip()[:50]
+        clave = request.form.get("clave", "")[:200]
+        con = conectar()
+        fila = con.execute("SELECT * FROM cuentas WHERE usuario=?", (usuario,)).fetchone()
+        con.close()
+        if fila and check_password_hash(fila["clave"], clave):
+            intentos.pop(ip, None)
+            session.clear()
+            session.permanent = True
+            session["usuario"] = fila["usuario"]
+            session["rol"] = fila["rol"]
+            token_csrf()
+            return redirect(url_for("index"))
+        registrar_fallo(ip)
+        flash("Usuario o contraseña incorrectos.", "error")
+    return render_login()
+
+
+@app.route("/salir", methods=["POST"])
+def salir():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/cuenta/clave", methods=["POST"])
+def cambiar_clave():
+    actual = request.form.get("actual", "")
+    nueva = request.form.get("nueva", "")
+    confirmar = request.form.get("confirmar", "")
+    if len(nueva) < 10 or len(nueva) > 128:
+        flash("La nueva contraseña debe tener entre 10 y 128 caracteres.", "error")
+    elif nueva != confirmar:
+        flash("La confirmación no coincide con la nueva contraseña.", "error")
+    else:
+        con = conectar()
+        fila = con.execute("SELECT * FROM cuentas WHERE usuario=?", (session["usuario"],)).fetchone()
+        if fila and check_password_hash(fila["clave"], actual):
+            con.execute("UPDATE cuentas SET clave=? WHERE usuario=?",
+                        (generate_password_hash(nueva), session["usuario"]))
+            con.commit()
+            flash("Contraseña actualizada.", "ok")
+        else:
+            flash("La contraseña actual no es correcta.", "error")
+        con.close()
+    return redirect(url_for("index", tab="configuracion"))
+
+
 # ---------- Rutas ----------
 @app.route("/")
 def index():
@@ -888,6 +1206,7 @@ def index():
     mod = con.execute("SELECT * FROM planilla_mod ORDER BY id").fetchall()
     cif = con.execute("SELECT * FROM costos_cif ORDER BY id").fetchall()
     usuarios = con.execute("SELECT * FROM usuarios ORDER BY id").fetchall()
+    cuentas = con.execute("SELECT id, usuario, rol FROM cuentas ORDER BY id").fetchall()
     rows = con.execute("""SELECT substr(v.fecha,1,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
                           SUM(v.cantidad*p.costo) AS cv FROM ventas v
                           JOIN platos p ON p.nombre=v.plato GROUP BY mes ORDER BY mes""").fetchall()
@@ -927,6 +1246,7 @@ def index():
                   "holg": (meta - pe) / meta * 100 if meta else 0}
 
     colores = obtener_colores()
+    rol = session.get("rol", "usuario")
 
     return render_template_string(
         PLANTILLA, tab=tab, secciones=SECCIONES, hoy=date.today().isoformat(),
@@ -935,9 +1255,11 @@ def index():
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
-        usuarios=usuarios, reportes=reportes, ficha=ficha, eq=eq,
+        usuarios=usuarios, cuentas=cuentas, reportes=reportes, ficha=ficha, eq=eq,
         campos={t: campos_de(t) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
+        usuario=session.get("usuario", ""), rol_txt=ROL_CUENTA.get(rol, "Usuario"),
+        es_admin=es_admin(), csrf_tok=token_csrf(),
     )
 
 
@@ -946,6 +1268,9 @@ def agregar(tabla):
     if tabla not in CAMPOS:
         abort(404)
     tab = request.form.get("tab", "dashboard")
+    if not es_admin() and tabla not in REGISTRO_USUARIO:
+        flash("Tu cuenta no puede registrar en esta sección.", "error")
+        return redirect(url_for("index", tab=tab))
     try:
         datos = {n: valor_de(t, request.form.get(n), e) for n, e, t, _ in CAMPOS[tabla]}
     except ValueError as err:
@@ -964,15 +1289,20 @@ def agregar(tabla):
 def eliminar(tabla, id_):
     if tabla not in CAMPOS:
         abort(404)
+    tab = request.form.get("tab", "dashboard")
+    if solo_admin():
+        return redirect(url_for("index", tab=tab))
     con = conectar()
     con.execute(f"DELETE FROM {tabla} WHERE id=?", (id_,))
     con.commit()
     con.close()
-    return redirect(url_for("index", tab=request.form.get("tab", "dashboard")))
+    return redirect(url_for("index", tab=tab))
 
 
 @app.route("/usuarios/<int:id_>/toggle", methods=["POST"])
 def toggle_usuario(id_):
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
     con = conectar()
     con.execute("UPDATE usuarios SET activo = 1 - activo WHERE id=?", (id_,))
     con.commit()
@@ -980,8 +1310,100 @@ def toggle_usuario(id_):
     return redirect(url_for("index", tab="usuarios"))
 
 
+@app.route("/cuentas/crear", methods=["POST"])
+def crear_cuenta():
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    usuario = request.form.get("usuario", "").strip()
+    clave = request.form.get("clave", "")
+    rol = request.form.get("rol", "usuario")
+    if not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
+        flash("El nombre de usuario debe tener de 3 a 30 letras, números, punto o guion bajo.", "error")
+    elif len(clave) < 10 or len(clave) > 128:
+        flash("La contraseña debe tener entre 10 y 128 caracteres.", "error")
+    elif rol not in ROL_CUENTA:
+        flash("Rol no válido.", "error")
+    else:
+        con = conectar()
+        try:
+            con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
+                        (usuario, generate_password_hash(clave), rol))
+            con.commit()
+            flash(f"Cuenta '{usuario}' creada como {ROL_CUENTA[rol]}.", "ok")
+        except sqlite3.IntegrityError:
+            flash("Ese nombre de usuario ya existe.", "error")
+        finally:
+            con.close()
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/cuentas/<int:id_>/rol", methods=["POST"])
+def cambiar_rol(id_):
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    con = conectar()
+    fila = con.execute("SELECT usuario, rol FROM cuentas WHERE id=?", (id_,)).fetchone()
+    if not fila:
+        flash("Cuenta no encontrada.", "error")
+    elif fila["usuario"] == session["usuario"]:
+        flash("No puedes cambiar tu propio rol.", "error")
+    elif fila["rol"] == "admin" and contar_admins(con) <= 1:
+        flash("Debe quedar al menos un administrador.", "error")
+    else:
+        nuevo = "usuario" if fila["rol"] == "admin" else "admin"
+        con.execute("UPDATE cuentas SET rol=? WHERE id=?", (nuevo, id_))
+        con.commit()
+        flash(f"'{fila['usuario']}' ahora es {ROL_CUENTA[nuevo]}.", "ok")
+    con.close()
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/cuentas/<int:id_>/eliminar", methods=["POST"])
+def eliminar_cuenta(id_):
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    con = conectar()
+    fila = con.execute("SELECT usuario, rol FROM cuentas WHERE id=?", (id_,)).fetchone()
+    if not fila:
+        flash("Cuenta no encontrada.", "error")
+    elif fila["usuario"] == session["usuario"]:
+        flash("No puedes eliminar tu propia cuenta.", "error")
+    elif fila["rol"] == "admin" and contar_admins(con) <= 1:
+        flash("Debe quedar al menos un administrador.", "error")
+    else:
+        con.execute("DELETE FROM cuentas WHERE id=?", (id_,))
+        con.commit()
+        flash(f"Cuenta '{fila['usuario']}' eliminada.", "ok")
+    con.close()
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/cuentas/clave", methods=["POST"])
+def restablecer_clave():
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    cuenta_id = request.form.get("cuenta_id", "")
+    nueva = request.form.get("nueva", "")
+    if not cuenta_id.isdigit():
+        flash("Selecciona una cuenta válida.", "error")
+    elif len(nueva) < 10 or len(nueva) > 128:
+        flash("La contraseña debe tener entre 10 y 128 caracteres.", "error")
+    else:
+        con = conectar()
+        cur = con.execute("UPDATE cuentas SET clave=? WHERE id=?",
+                          (generate_password_hash(nueva), int(cuenta_id)))
+        con.commit()
+        afectadas = cur.rowcount
+        con.close()
+        flash("Contraseña restablecida." if afectadas else "Cuenta no encontrada.",
+              "ok" if afectadas else "error")
+    return redirect(url_for("index", tab="usuarios"))
+
+
 @app.route("/configuracion/guardar", methods=["POST"])
 def guardar_colores():
+    if solo_admin():
+        return redirect(url_for("index", tab="configuracion"))
     nuevos = {}
     for clave in COLORES_DEFECTO:
         valor = (request.form.get(clave) or "").strip().lower()
@@ -1001,6 +1423,8 @@ def guardar_colores():
 
 @app.route("/configuracion/restaurar", methods=["POST"])
 def restaurar_colores():
+    if solo_admin():
+        return redirect(url_for("index", tab="configuracion"))
     con = conectar()
     con.execute("DELETE FROM configuracion")
     con.commit()
@@ -1028,4 +1452,4 @@ def exportar():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
