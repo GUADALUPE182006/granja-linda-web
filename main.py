@@ -411,12 +411,14 @@ def control_acceso():
         return None
     if "usuario" not in session:
         return redirect(url_for("login"))
-    fila = consultar("SELECT rol, activo FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
+    fila = consultar("SELECT rol, activo, nombre, puesto FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
     if not fila or fila["activo"] != 1:
         session.clear()
         flash("Tu cuenta no está activa. Pide al administrador que la revise.", "error")
         return redirect(url_for("login"))
     session["rol"] = fila["rol"]
+    session["puesto"] = fila["puesto"]
+    session["nombre"] = fila["nombre"] or session["usuario"]
     return None
 
 
@@ -701,6 +703,8 @@ header{grid-column:1/-1;background:linear-gradient(90deg,var(--p),var(--p-osc));
 .quien{text-align:right;line-height:1.25}
 .quien b{display:block;font-weight:600}
 .quien span{font-size:12px;opacity:.9}
+.rol-chip{display:inline-flex;align-items:center;gap:5px;margin-top:3px;padding:2px 10px;border-radius:999px;background:rgba(255,255,255,.22);opacity:1!important;font-weight:500}
+.rol-chip i{font-size:14px}
 .avatar{width:40px;height:40px;border-radius:50%;background:#fff;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px}
 .engranaje{width:40px;height:40px;border-radius:50%;border:0;padding:0;cursor:pointer;background:rgba(255,255,255,.22);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;text-decoration:none;transition:transform .3s,background .2s}
 .engranaje:hover{background:rgba(255,255,255,.35);transform:rotate(60deg)}
@@ -946,8 +950,9 @@ td.acc form{display:inline-block;margin-left:4px}
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       <button class="engranaje" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ti ti-logout" aria-hidden="true"></i></button>
     </form>
-    <div class="quien"><b>{{ nombre }}</b><span>{{ rol_txt }}</span></div>
-    <div class="avatar" title="{{ nombre }} ({{ rol_txt }})">{{ ico('user') }}</div>
+    <div class="quien"><b>{{ nombre }}</b>
+      <span class="rol-chip"><i class="ti ti-{{ 'shield-check' if es_admin else 'user' }}" aria-hidden="true"></i>{{ rol_txt }}{% if puesto %} · {{ puesto }}{% endif %}</span></div>
+    <div class="avatar" title="{{ nombre }} ({{ rol_txt }})">{{ ico('shield-check' if es_admin else 'user') }}</div>
   </div>
 </header>
 
@@ -1378,6 +1383,7 @@ def login():
             session["usuario"] = fila["usuario"]
             session["nombre"] = fila["nombre"] or fila["usuario"]
             session["rol"] = fila["rol"]
+            session["puesto"] = fila["puesto"]
             token_csrf()
             return redirect(url_for("index"))
         registrar_fallo(ip)
@@ -1528,7 +1534,8 @@ def index():
         ficha=ficha, eq=eq, campos={t: campos_de(t) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
-        rol_txt=ROL_CUENTA.get(rol, "Usuario"), es_admin=es_admin(), csrf_tok=token_csrf(),
+        rol_txt=ROL_CUENTA.get(rol, "Usuario"), puesto=session.get("puesto", ""),
+        es_admin=es_admin(), csrf_tok=token_csrf(),
     )
 
 
