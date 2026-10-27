@@ -28,16 +28,16 @@ MAX_INTENTOS = 5
 VENTANA_BLOQUEO = 15 * 60
 intentos = {}  # ip -> (cantidad de fallos, momento del primer fallo)
 MAX_REGISTROS_HORA = 5
-registros = {}  # ip -> lista de momentos en que se crearon cuentas
+registros = {}  # ip -> momentos en que se crearon cuentas públicas
 
 COMISION_APPS = 0.18
 CANALES = ["Salón", "Delivery propio", "Apps de delivery", "Llevar (take away)"]
 PAGOS = ["Efectivo", "Yape", "Plin", "POS (tarjeta)"]
 CAUSAS = ["Mano", "Razón", "Vencimiento", "Preparación"]
-ROLES = ["Administrador", "Caja", "Cocina", "Compras"]
 PUESTOS = ["Cocinero(a) principal", "Ayudante de cocina", "Cajero(a)", "Delivery", "Otro"]
 CONCEPTOS_CIF = ["Servicios públicos", "Arrendamiento del local", "Mantenimiento de equipos",
                  "Arbitrios", "Otro"]
+PUESTOS_PERSONA = ["Administración", "Caja", "Cocina", "Compras", "Delivery", "Sin asignar"]
 
 ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
 REGISTRO_USUARIO = {"ventas", "mermas"}
@@ -53,13 +53,12 @@ CAMPOS = {
                      ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
     "costos_cif": [("concepto", "Concepto", "texto", CONCEPTOS_CIF),
                    ("monto", "Monto mensual (S/)", "decimal", None)],
-    "usuarios": [("nombre", "Nombre", "texto", None), ("rol", "Rol", "texto", ROLES)],
 }
 
 ICONOS = {"rol": "user", "sueldo": "coin", "concepto": "file-text", "monto": "coin",
           "fecha": "calendar", "plato": "tools-kitchen-2", "cantidad": "hash",
           "canal": "truck-delivery", "pago": "credit-card", "insumo": "carrot",
-          "costo": "coin", "causa": "alert-triangle", "nombre": "user"}
+          "costo": "coin", "causa": "alert-triangle"}
 
 SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
              ("mermas", "box", "Mermas"), ("costos", "calculator", "Costos MOD/CIF"),
@@ -205,14 +204,14 @@ def init_db():
             sueldo DOUBLE PRECISION);
         CREATE TABLE IF NOT EXISTS costos_cif (id SERIAL PRIMARY KEY, concepto TEXT,
             monto DOUBLE PRECISION);
-        CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nombre TEXT, rol TEXT,
-            activo INTEGER DEFAULT 1);
         CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT);
         CREATE TABLE IF NOT EXISTS cuentas (id SERIAL PRIMARY KEY, usuario TEXT UNIQUE NOT NULL,
             clave TEXT NOT NULL, rol TEXT NOT NULL DEFAULT 'usuario');
+        ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS nombre TEXT NOT NULL DEFAULT '';
+        ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS puesto TEXT NOT NULL DEFAULT 'Sin asignar';
+        ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS activo INTEGER NOT NULL DEFAULT 1;
     """)
-    for t in ["platos", "ventas", "mermas", "planilla_mod", "costos_cif",
-              "usuarios", "configuracion", "cuentas"]:
+    for t in ["platos", "ventas", "mermas", "planilla_mod", "costos_cif", "configuracion", "cuentas"]:
         cur.execute(f"ALTER TABLE public.{t} ENABLE ROW LEVEL SECURITY;")
 
     semillas = {
@@ -224,8 +223,6 @@ def init_db():
         "costos_cif": ("INSERT INTO costos_cif(concepto,monto) VALUES(%s,%s)", [
             ("Servicios públicos", 850), ("Arrendamiento del local", 1500),
             ("Mantenimiento de equipos", 400), ("Arbitrios", 180)]),
-        "usuarios": ("INSERT INTO usuarios(nombre,rol) VALUES(%s,%s)", [
-            ("J. Castro", "Administrador"), ("M. Ramírez", "Caja"), ("L. Huamán", "Cocina")]),
     }
     for tabla, (sql, filas) in semillas.items():
         cur.execute(f"SELECT COUNT(*) AS n FROM {tabla}")
@@ -239,24 +236,24 @@ def init_db():
     fila = cur.fetchone()
     if clave_env:
         if fila:
-            cur.execute("UPDATE cuentas SET clave=%s, rol='admin' WHERE id=%s",
+            cur.execute("UPDATE cuentas SET clave=%s, rol='admin', activo=1 WHERE id=%s",
                         (generate_password_hash(clave_env), fila["id"]))
         else:
-            cur.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
-                        (admin_usuario, generate_password_hash(clave_env), "admin"))
+            cur.execute("INSERT INTO cuentas(usuario, clave, rol, nombre, puesto) VALUES(%s,%s,'admin','Administrador','Administración')",
+                        (admin_usuario, generate_password_hash(clave_env)))
         print(f"[SEGURIDAD] Administrador '{admin_usuario}' listo con ADMIN_PASSWORD.")
     else:
         cur.execute("SELECT COUNT(*) AS n FROM cuentas")
         if fila is None and cur.fetchone()["n"] == 0:
             clave_temp = secrets.token_urlsafe(10)
-            cur.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
-                        (admin_usuario, generate_password_hash(clave_temp), "admin"))
+            cur.execute("INSERT INTO cuentas(usuario, clave, rol, nombre, puesto) VALUES(%s,%s,'admin','Administrador','Administración')",
+                        (admin_usuario, generate_password_hash(clave_temp)))
             print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave_temp}")
 
-    # Garantiza que siempre exista al menos un administrador
-    cur.execute("SELECT COUNT(*) AS n FROM cuentas WHERE rol='admin'")
+    # Siempre debe existir al menos un administrador activo
+    cur.execute("SELECT COUNT(*) AS n FROM cuentas WHERE rol='admin' AND activo=1")
     if cur.fetchone()["n"] == 0:
-        cur.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
+        cur.execute("UPDATE cuentas SET rol='admin', activo=1 WHERE id=(SELECT MIN(id) FROM cuentas)")
     con.commit()
     con.close()
 
@@ -363,7 +360,6 @@ def registrar_fallo(ip):
 
 
 def registro_permitido(ip):
-    """Máximo de cuentas nuevas por hora desde una misma conexión."""
     ahora = time.time()
     recientes = [t for t in registros.get(ip, []) if ahora - t < 3600]
     registros[ip] = recientes
@@ -382,8 +378,13 @@ def solo_admin():
     return False
 
 
-def contar_admins():
-    return escalar("SELECT COUNT(*) FROM cuentas WHERE rol='admin'")
+def admins_activos():
+    return escalar("SELECT COUNT(*) FROM cuentas WHERE rol='admin' AND activo=1")
+
+
+def quedaria_sin_admin(fila):
+    """True si quitar el rol o desactivar esta cuenta dejaría sin administradores."""
+    return fila["rol"] == "admin" and fila["activo"] == 1 and admins_activos() <= 1
 
 
 PUBLICAS = {"login", "registro", "static"}
@@ -403,9 +404,10 @@ def control_acceso():
         return None
     if "usuario" not in session:
         return redirect(url_for("login"))
-    fila = consultar("SELECT rol FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
-    if not fila:
+    fila = consultar("SELECT rol, activo FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
+    if not fila or fila["activo"] != 1:
         session.clear()
+        flash("Tu cuenta no está activa. Pide al administrador que la revise.", "error")
         return redirect(url_for("login"))
     session["rol"] = fila["rol"]
     return None
@@ -445,11 +447,9 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 .halo{position:fixed;border-radius:50%;filter:blur(60px);opacity:.5;z-index:0;pointer-events:none}
 .halo.h1{width:420px;height:420px;background:var(--p-cl2);top:-140px;left:-120px}
 .halo.h2{width:360px;height:360px;background:var(--s-cl2);bottom:-140px;right:-100px}
-
 .shell{position:relative;z-index:1;width:min(980px,100%);min-height:600px;display:grid;grid-template-columns:1fr 1.05fr;
   background:#fff;border-radius:28px;overflow:hidden;box-shadow:0 24px 60px rgba(120,60,20,.16);animation:entra .6s ease both}
 @keyframes entra{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
-
 .izq{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;padding:40px 36px 0;
   background:linear-gradient(175deg,var(--p-cl),var(--p-cl2));overflow:hidden}
 .logo{width:92px;height:92px;border-radius:24px;background:linear-gradient(135deg,var(--p),var(--p-osc));
@@ -462,22 +462,16 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 .escena{width:100%;margin-top:24px;flex:1;display:flex;align-items:flex-end}
 .escena svg{width:100%;height:auto;display:block}
 .frase{width:calc(100% + 72px);margin:0 -36px;padding:20px 30px 22px;color:#fff;background:var(--p);
-  font-size:18px;font-style:italic;text-align:left;border-radius:60% 40% 0 0 / 40% 30% 0 0;
-  box-shadow:0 -6px 18px rgba(0,0,0,.05)}
-
+  font-size:18px;font-style:italic;text-align:left;border-radius:60% 40% 0 0 / 40% 30% 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.05)}
 .der{position:relative;padding:48px 52px 34px;display:flex;flex-direction:column;justify-content:center}
-.der::before{content:"";position:absolute;right:-30px;top:-20px;width:150px;height:110px;
-  background:radial-gradient(ellipse at center,var(--p-cl2) 0 30%,transparent 70%);opacity:.6;pointer-events:none}
 h1{margin:0;font-size:32px;font-weight:600;color:#1f1a16}
 .sub{margin:10px 0 24px;font-size:15px;color:var(--mu);line-height:1.5}
-
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;background:#f6f1ec;border-radius:16px;margin-bottom:22px}
 .tab{height:50px;border:0;border-radius:12px;background:transparent;color:#4a3a2e;font-size:15px;font-weight:500;cursor:pointer;
   display:flex;align-items:center;justify-content:center;gap:10px;font-family:inherit;transition:background .25s,color .25s,transform .15s}
 .tab i{font-size:20px}
 .tab:hover{transform:translateY(-1px)}
 .tab.on{background:linear-gradient(90deg,var(--p),var(--p-osc));color:#fff;box-shadow:0 8px 18px color-mix(in srgb,var(--p-osc) 30%,transparent)}
-
 .campo{display:flex;flex-direction:column;gap:8px;font-size:15px;font-weight:500;margin-bottom:16px}
 .caja{position:relative;display:flex;align-items:center}
 .caja > i.ic{position:absolute;left:16px;font-size:20px;color:#8c8076;pointer-events:none}
@@ -490,26 +484,21 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
   display:flex;align-items:center;justify-content:center;font-size:20px}
 .ver:hover{background:#f6f1ec;color:var(--p)}
 .ayuda{font-size:13px;color:var(--mu);margin:-6px 0 14px}
-
 .fila{display:flex;justify-content:space-between;align-items:center;margin:4px 0 22px;font-size:14px}
 .rec{display:flex;align-items:center;gap:10px;color:#4a3a2e;cursor:pointer}
 .rec input{width:18px;height:18px;accent-color:var(--p);margin:0}
 .olvide{color:var(--p-osc);text-decoration:underline;text-underline-offset:3px}
-
 .entrar{width:100%;height:56px;border:0;border-radius:16px;color:#fff;font-size:17px;font-weight:500;cursor:pointer;font-family:inherit;
   display:flex;align-items:center;justify-content:center;gap:12px;background:linear-gradient(90deg,var(--p),var(--p-osc));
   box-shadow:0 12px 24px color-mix(in srgb,var(--p-osc) 30%,transparent);transition:transform .15s,filter .2s}
 .entrar:hover{filter:brightness(1.05);transform:translateY(-1px)}
 .entrar:active{transform:scale(.98)}
 .entrar i{font-size:22px}
-
 .pie{margin:26px 0 0;padding-top:20px;border-top:1px solid #efe7de;text-align:center;font-size:14px;color:var(--mu)}
 .pie a{color:var(--p-osc);text-decoration:none}
 .pie b{font-weight:600}
-
 .flash{background:#fdeeee;color:#a8322d;padding:12px 16px;border-radius:12px;margin-bottom:18px;font-size:14px}
 .flash.ok{background:#eef7ea;color:#3f7d21}
-
 @media(max-width:820px){
   .shell{grid-template-columns:1fr;min-height:0}
   .izq{padding:28px 24px 0}
@@ -531,7 +520,6 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
     <h2>La Granja Linda</h2>
     <p class="lema">Tu granja, nuestra prioridad</p>
     <p class="desc">Gestiona costos, mermas y presupuestos de manera fácil, segura y eficiente.</p>
-
     <div class="escena" aria-hidden="true">
       <svg viewBox="0 0 360 220">
         <rect x="0" y="168" width="360" height="60" fill="#e9bd93" opacity=".55"/>
@@ -572,10 +560,17 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       {% if vista != 'registro' %}<input type="hidden" name="tipo" id="tipo" value="{{ tipo }}">{% endif %}
 
+      {% if vista == 'registro' %}
+      <label class="campo">Nombre completo
+        <span class="caja"><i class="ti ti-id ic" aria-hidden="true"></i>
+          <input type="text" name="nombre" placeholder="Ej. Juan Pérez" autocomplete="name" required maxlength="60"></span>
+      </label>
+      {% endif %}
+
       <label class="campo">Usuario
         <span class="caja"><i class="ti ti-user ic" aria-hidden="true"></i>
           <input type="text" name="usuario" placeholder="{{ 'Elige un nombre de usuario' if vista == 'registro' else 'Ingresa tu usuario' }}"
-            autocomplete="username" required maxlength="30" {% if vista == 'registro' %}pattern="[A-Za-z0-9_.]{3,30}"{% else %}maxlength="50"{% endif %}></span>
+            autocomplete="username" required maxlength="{{ 30 if vista == 'registro' else 50 }}" {% if vista == 'registro' %}pattern="[A-Za-z0-9_.]{3,30}"{% endif %}></span>
       </label>
       {% if vista == 'registro' %}<p class="ayuda">De 3 a 30 letras, números, punto o guion bajo.</p>{% endif %}
 
@@ -621,7 +616,6 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
       if (tipo) tipo.value = t.getAttribute('data-tipo');
     });
   });
-
   var ver = document.getElementById('ver');
   var clave = document.getElementById('clave');
   ver.addEventListener('click', function () {
@@ -629,7 +623,6 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
     clave.type = oculta ? 'text' : 'password';
     ver.innerHTML = '<i class="ti ' + (oculta ? 'ti-eye-off' : 'ti-eye') + '" aria-hidden="true"></i>';
   });
-
   var olvide = document.getElementById('olvide');
   if (olvide) {
     olvide.addEventListener('click', function (e) {
@@ -660,7 +653,6 @@ PLANTILLA = """
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--crema);color:var(--tx);font-size:14px;
   display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh;overflow-x:hidden}
-
 .fondo-anim{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none}
 .fondo-anim .blob{position:absolute;border-radius:50%;filter:blur(40px);opacity:.55;animation:respira 14s ease-in-out infinite}
 .fondo-anim .b1{width:420px;height:420px;background:var(--p-cl2);top:-120px;right:-80px}
@@ -674,10 +666,8 @@ body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(-
 .fondo-anim .i5{font-size:28px;top:8%;left:62%;animation-delay:-7s;color:var(--a)}
 @keyframes respira{0%,100%{transform:scale(1) translate(0,0)}50%{transform:scale(1.12) translate(20px,-14px)}}
 @keyframes flota{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-26px) rotate(14deg)}}
-
 #cursor-glow{position:fixed;left:0;top:0;width:320px;height:320px;border-radius:50%;pointer-events:none;z-index:0;
   background:radial-gradient(circle,color-mix(in srgb,var(--p) 16%,transparent),transparent 70%);opacity:0;transition:opacity .4s;will-change:transform}
-
 header{grid-column:1/-1;background:linear-gradient(90deg,var(--p),var(--p-osc));color:#fff;padding:12px 24px;
   display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;position:relative;z-index:2}
 .marca{display:flex;align-items:center;gap:14px}
@@ -702,12 +692,10 @@ nav a.activo{background:var(--p);color:#fff;font-weight:500}
 .decor-menu{margin-top:auto;width:100%}
 .decor-menu svg{width:100%;height:auto;display:block}
 main{min-width:0;padding:22px 26px;max-width:1180px;width:100%;position:relative;z-index:1}
-
 main > *{animation:sube .5s ease both}
 main > *:nth-child(2){animation-delay:.05s}
 main > *:nth-child(3){animation-delay:.1s}
 @keyframes sube{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-
 .card{background:#fff;border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 2px 14px rgba(120,60,20,.07);overflow:hidden;transition:transform .25s,box-shadow .25s}
 .card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(120,60,20,.12)}
 .banner{display:flex;align-items:center;gap:16px;padding:18px 20px;margin:-18px -18px 18px;position:relative;overflow:hidden}
@@ -731,7 +719,6 @@ main > *:nth-child(3){animation-delay:.1s}
 .gris h3{color:#4a3a2a}.gris p{color:#6b5a4a}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:800px){.grid2{grid-template-columns:1fr}body{grid-template-columns:1fr}nav{position:static;height:auto;flex-direction:row;flex-wrap:wrap;border-right:none}nav a{padding:8px 10px}.decor-menu{display:none}.hero .gallo{display:none}#cursor-glow{display:none}}
-
 .hero{position:relative;overflow:hidden;background:#fff;border-radius:18px;padding:24px 26px;display:flex;align-items:center;gap:18px;margin-bottom:18px;min-height:170px;box-shadow:0 2px 14px rgba(120,60,20,.07)}
 .hero .txt{position:relative;z-index:2;display:flex;align-items:center;gap:18px}
 .hero small{color:var(--mu);font-size:14px;display:block}
@@ -761,7 +748,6 @@ main > *:nth-child(3){animation-delay:.1s}
 .nota{color:var(--mu);font-size:12px;margin:10px 0 0}
 .filas div{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--ln);font-size:13px}
 .filas div:last-child{border-bottom:none}
-
 form.reg{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 18px;margin-bottom:6px;align-items:end}
 .campo{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--tx);font-weight:500}
 .campo .lbl{display:flex;align-items:center;gap:8px}
@@ -779,13 +765,11 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .verde input:focus,.verde select:focus{border-color:var(--s);box-shadow:0 0 0 3px color-mix(in srgb,var(--s) 15%,transparent)}
 .azul input:focus,.azul select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 15%,transparent)}
 .accion{grid-column:1/-1;display:flex;align-items:center;gap:14px}
-
 .btn,.btn-sec,button{position:relative;overflow:hidden}
 .btn{height:48px;padding:0 18px;border-radius:12px;border:none;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;background:linear-gradient(90deg,var(--p),var(--p-osc));box-shadow:0 6px 14px color-mix(in srgb,var(--p-osc) 30%,transparent);transition:transform .15s,filter .2s,box-shadow .2s}
 .btn:hover{filter:brightness(1.06);box-shadow:0 10px 20px color-mix(in srgb,var(--p-osc) 38%,transparent);transform:translateY(-1px)}
 .btn:active,.btn-sec:active{transform:scale(.95)}
 .btn.verde{background:linear-gradient(90deg,var(--s),var(--s-osc));box-shadow:0 6px 14px color-mix(in srgb,var(--s-osc) 30%,transparent)}
-.btn.verde:hover{box-shadow:0 10px 20px color-mix(in srgb,var(--s-osc) 38%,transparent)}
 .btn.azul{background:linear-gradient(90deg,var(--a),var(--a-osc));box-shadow:0 6px 14px color-mix(in srgb,var(--a-osc) 30%,transparent)}
 .btn.rojo{background:linear-gradient(90deg,#ef7a6b,#c0392b);box-shadow:0 6px 14px rgba(192,57,43,.25)}
 .btn.gris{background:linear-gradient(90deg,#9a8a7a,#6b5a4a);box-shadow:0 6px 14px rgba(107,90,74,.25)}
@@ -798,12 +782,12 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .btn-sec.verde:hover{background:var(--s-cl)}
 .btn-sec.azul{color:var(--a-osc);border-color:var(--a-cl2)}
 .btn-sec.azul:hover{background:var(--a-cl)}
+.btn-sec.rojo{color:#a8322d;border-color:#f4b9b2}
+.btn-sec.rojo:hover{background:#fdeeee}
 .btn-sec i{font-size:16px}
-
 .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:onda .6s ease-out forwards;pointer-events:none}
 .btn-sec .ripple{background:color-mix(in srgb,var(--p) 22%,transparent)}
 @keyframes onda{to{transform:scale(1);opacity:0}}
-
 .tabla-wrap{border:1px solid var(--ln);border-radius:14px;overflow:hidden;margin-top:16px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-size:13px;color:var(--tx);font-weight:500;padding:12px 16px;background:var(--p-cl);border-bottom:1px solid var(--ln)}
@@ -812,7 +796,7 @@ th.azul-h{background:var(--a-cl);color:var(--a-osc)}
 td{padding:12px 16px;border-bottom:1px solid #f4ece3;transition:background .2s}
 tbody tr:hover td,table tr:hover td{background:#fffaf5}
 tr:last-child td{border-bottom:none}
-td.acc{text-align:right;width:130px}
+td.acc{text-align:right;width:260px}
 td.acc form{display:inline-block;margin-left:4px}
 .res{background:var(--p-cl);color:var(--p-osc);border-radius:12px;padding:14px 16px;margin-top:14px;font-weight:500}
 .total{display:flex;align-items:center;gap:16px;border-radius:16px;padding:18px 20px;margin-top:16px;color:#fff;position:relative;overflow:hidden}
@@ -823,10 +807,11 @@ td.acc form{display:inline-block;margin-left:4px}
 .total b{font-size:26px;font-weight:500}
 .total .tend{position:absolute;right:22px;top:50%;transform:translateY(-50%);font-size:34px;opacity:.85}
 .solo-lectura{font-size:12px;color:var(--mu);margin:12px 0 0}
-
+.estado{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:500}
+.estado.on{background:var(--vd-i);color:var(--vd-t)}
+.estado.off{background:var(--rj-i);color:var(--rj-t)}
 .flash{background:var(--rj-f);color:var(--rj-t);padding:12px 16px;border-radius:12px;margin-bottom:14px}
 .flash.ok{background:var(--s-cl);color:var(--s-osc)}
-
 .paletas{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
 .paleta{border:1px solid var(--ln);border-radius:14px;padding:14px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;transition:transform .2s,box-shadow .2s}
 .paleta:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(120,60,20,.12)}
@@ -842,7 +827,6 @@ td.acc form{display:inline-block;margin-left:4px}
 .pv-chip{padding:8px 14px;border-radius:999px;color:#fff;font-size:13px;background:var(--pv-a,#2e6aa8)}
 .pv-tarjeta{flex:1;min-width:180px;border-radius:14px;padding:14px;background:color-mix(in srgb,var(--pv-p,#e0661f) 14%,white)}
 .pv-tarjeta b{display:block;font-size:20px;font-weight:500;color:var(--tx)}
-
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
   #cursor-glow{display:none}
@@ -941,14 +925,14 @@ td.acc form{display:inline-block;margin-left:4px}
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       <button class="engranaje" type="submit" title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ti ti-logout" aria-hidden="true"></i></button>
     </form>
-    <div class="quien"><b>{{ usuario }}</b><span>{{ rol_txt }}</span></div>
-    <div class="avatar" title="{{ usuario }} ({{ rol_txt }})">{{ ico('user') }}</div>
+    <div class="quien"><b>{{ nombre }}</b><span>{{ rol_txt }}</span></div>
+    <div class="avatar" title="{{ nombre }} ({{ rol_txt }})">{{ ico('user') }}</div>
   </div>
 </header>
 
 <nav>
-  {% for id, icono, nombre in secciones %}
-    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><i class="ti ti-{{ icono }}" aria-hidden="true"></i>{{ nombre }}</a>
+  {% for id, icono, nombre_sec in secciones %}
+    <a href="{{ url_for('index', tab=id) }}" class="{{ 'activo' if tab==id }}"><i class="ti ti-{{ icono }}" aria-hidden="true"></i>{{ nombre_sec }}</a>
   {% endfor %}
   <div class="decor-menu">{{ gallina_svg|safe }}</div>
 </nav>
@@ -1133,87 +1117,73 @@ td.acc form{display:inline-block;margin-left:4px}
 
 {% if tab == 'usuarios' %}
   <div class="card">
-    {{ banner('users', 'Usuarios del sistema', 'Personas del equipo y su rol en el negocio', 'naranja') }}
+    {{ banner('users', 'Personal y accesos', 'Cada persona tiene un solo registro: nombre, puesto, usuario para entrar y su rol.', 'naranja') }}
     <div class="tabla-wrap">
     <table>
-      <tr><th>Nombre</th><th>Rol</th><th>Estado</th>{% if es_admin %}<th></th>{% endif %}</tr>
-      {% for u in usuarios %}
+      <tr><th>Nombre</th><th>Usuario</th><th>Puesto</th><th>Rol</th><th>Estado</th>{% if es_admin %}<th></th>{% endif %}</tr>
+      {% for p in personas %}
       <tr>
-        <td>{{ u['nombre'] }}</td><td>{{ u['rol'] }}</td>
-        <td>{{ 'Activo' if u['activo'] else 'Inactivo' }}</td>
+        <td>{{ p['nombre'] or '—' }}{% if p['usuario'] == usuario %} <small style="color:var(--mu)">(tú)</small>{% endif %}</td>
+        <td>{{ p['usuario'] }}</td>
+        <td>{{ p['puesto'] }}</td>
+        <td>{{ 'Administrador' if p['rol'] == 'admin' else 'Usuario' }}</td>
+        <td><span class="estado {{ 'on' if p['activo'] == 1 else 'off' }}">{{ 'Activo' if p['activo'] == 1 else 'Inactivo' }}</span></td>
         {% if es_admin %}
         <td class="acc">
-          <form method="post" action="{{ url_for('toggle_usuario', id_=u['id']) }}" style="display:inline">
+          {% if p['usuario'] != usuario %}
+          <form method="post" action="{{ url_for('cambiar_rol', id_=p['id']) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-            <button class="btn-sec" type="submit">{{ 'Desactivar' if u['activo'] else 'Activar' }}</button>
+            <button class="btn-sec" type="submit">{{ 'Hacer usuario' if p['rol'] == 'admin' else 'Hacer administrador' }}</button>
           </form>
-          <form method="post" action="{{ url_for('eliminar', tabla='usuarios', id_=u['id']) }}" style="display:inline">
-            <input type="hidden" name="tab" value="usuarios">
+          <form method="post" action="{{ url_for('cambiar_estado', id_=p['id']) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-            <button class="btn-sec" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
+            <button class="btn-sec" type="submit">{{ 'Desactivar' if p['activo'] == 1 else 'Activar' }}</button>
           </form>
+          <form method="post" action="{{ url_for('eliminar_persona', id_=p['id']) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+            <button class="btn-sec rojo" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
+          </form>
+          {% endif %}
         </td>
         {% endif %}
       </tr>
       {% endfor %}
     </table>
     </div>
-    {% if not es_admin %}<p class="solo-lectura">Solo el administrador puede agregar, activar o eliminar personas.</p>{% endif %}
+    {% if not es_admin %}<p class="solo-lectura">Solo el administrador puede agregar personas, cambiar roles o activar cuentas.</p>{% endif %}
   </div>
 
   {% if es_admin %}
   <div class="card">
-    {{ banner('user-plus', 'Agregar persona al equipo', 'Registra una persona del negocio (caja, cocina, compras)', 'verde') }}
-    {{ registro('usuarios', campos.usuarios, [], [], 'verde', 'Agregar persona') }}
-  </div>
-
-  <div class="card">
-    {{ banner('key', 'Cuentas de acceso', 'Las personas también pueden crear su cuenta desde la pantalla de inicio de sesión. Aquí puedes administrarlas.', 'naranja') }}
-    <form class="reg" method="post" action="{{ url_for('crear_cuenta') }}">
+    {{ banner('user-plus', 'Agregar persona', 'Crea el registro y su cuenta de acceso en un solo paso', 'verde') }}
+    <form class="reg verde" method="post" action="{{ url_for('crear_persona') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Nombre de usuario</span>
+      <label class="campo"><span class="lbl"><i class="ti ti-id" aria-hidden="true"></i>Nombre completo</span>
+        <span class="caja"><input type="text" name="nombre" maxlength="60" placeholder="Ej. María López" required></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-briefcase" aria-hidden="true"></i>Puesto</span>
+        <span class="caja sel"><select name="puesto" required>
+          {% for pu in puestos_persona %}<option>{{ pu }}</option>{% endfor %}
+        </select></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Usuario para entrar</span>
         <span class="caja"><input type="text" name="usuario" maxlength="30" pattern="[A-Za-z0-9_.]{3,30}" placeholder="Ej. caja1" required></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Contraseña inicial</span>
         <span class="caja"><input type="password" name="clave" minlength="10" maxlength="128" autocomplete="new-password" placeholder="Mínimo 10 caracteres" required></span></label>
-      <label class="campo"><span class="lbl"><i class="ti ti-shield" aria-hidden="true"></i>Rol</span>
+      <label class="campo"><span class="lbl"><i class="ti ti-shield" aria-hidden="true"></i>Rol de acceso</span>
         <span class="caja sel"><select name="rol" required>
           <option value="usuario">Usuario</option>
           <option value="admin">Administrador</option>
         </select></span></label>
-      <div class="accion"><button class="btn" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>Crear cuenta<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+      <div class="accion"><button class="btn verde" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>Agregar persona<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
-    <div class="tabla-wrap">
-    <table>
-      <tr><th>Usuario</th><th>Rol</th><th></th></tr>
-      {% for c in cuentas %}
-      <tr>
-        <td>{{ c['usuario'] }}{% if c['usuario'] == usuario %} <small style="color:var(--mu)">(tú)</small>{% endif %}</td>
-        <td>{{ 'Administrador' if c['rol'] == 'admin' else 'Usuario' }}</td>
-        <td class="acc">
-          {% if c['usuario'] != usuario %}
-          <form method="post" action="{{ url_for('cambiar_rol', id_=c['id']) }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-            <button class="btn-sec" type="submit">{{ 'Hacer usuario' if c['rol'] == 'admin' else 'Hacer administrador' }}</button>
-          </form>
-          <form method="post" action="{{ url_for('eliminar_cuenta', id_=c['id']) }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-            <button class="btn-sec" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
-    </div>
   </div>
 
   <div class="card">
-    {{ banner('lock', 'Restablecer contraseña', 'Asigna una nueva contraseña a una cuenta existente', 'azul') }}
+    {{ banner('lock', 'Restablecer contraseña', 'Asigna una nueva contraseña a una persona', 'azul') }}
     <form class="reg azul" method="post" action="{{ url_for('restablecer_clave') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Cuenta</span>
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Persona</span>
         <span class="caja sel"><select name="cuenta_id" required>
-          {% for c in cuentas %}<option value="{{ c['id'] }}">{{ c['usuario'] }}</option>{% endfor %}
+          {% for p in personas %}<option value="{{ p['id'] }}">{{ p['nombre'] or p['usuario'] }} ({{ p['usuario'] }})</option>{% endfor %}
         </select></span></label>
       <label class="campo"><span class="lbl"><i class="ti ti-key" aria-hidden="true"></i>Nueva contraseña</span>
         <span class="caja"><input type="password" name="nueva" minlength="10" maxlength="128" autocomplete="new-password" required></span></label>
@@ -1361,10 +1331,7 @@ def render_auth(vista="login", tipo="usuario"):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     token_csrf()
-    if request.method == "POST":
-        tipo = request.form.get("tipo", "usuario")
-    else:
-        tipo = request.args.get("tipo", "usuario")
+    tipo = request.form.get("tipo", "usuario") if request.method == "POST" else request.args.get("tipo", "usuario")
     if tipo not in ("usuario", "admin"):
         tipo = "usuario"
 
@@ -1377,6 +1344,9 @@ def login():
         clave = request.form.get("clave", "")[:200]
         fila = consultar("SELECT * FROM cuentas WHERE usuario=%s", (usuario,), uno=True)
         if fila and check_password_hash(fila["clave"], clave):
+            if fila["activo"] != 1:
+                flash("Esta cuenta está desactivada. Pide al administrador que la active.", "error")
+                return render_auth("login", tipo)
             if tipo == "admin" and fila["rol"] != "admin":
                 flash("Esta cuenta no es de administrador. Selecciona la pestaña Usuario.", "error")
                 return render_auth("login", tipo)
@@ -1384,6 +1354,7 @@ def login():
             session.clear()
             session.permanent = True
             session["usuario"] = fila["usuario"]
+            session["nombre"] = fila["nombre"] or fila["usuario"]
             session["rol"] = fila["rol"]
             token_csrf()
             return redirect(url_for("index"))
@@ -1401,12 +1372,15 @@ def registro():
             flash("Se alcanzó el límite de cuentas creadas desde tu conexión. Inténtalo más tarde.", "error")
             return render_auth("registro")
 
+        nombre = request.form.get("nombre", "").strip()
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "")
         confirmar = request.form.get("confirmar", "")
 
         error = None
-        if not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
+        if not 3 <= len(nombre) <= 60:
+            error = "Escribe tu nombre completo (entre 3 y 60 caracteres)."
+        elif not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
             error = "El nombre de usuario debe tener de 3 a 30 letras, números, punto o guion bajo."
         elif len(clave) < 10 or len(clave) > 128:
             error = "La contraseña debe tener entre 10 y 128 caracteres."
@@ -1418,9 +1392,10 @@ def registro():
             return render_auth("registro")
 
         try:
-            # Las cuentas públicas siempre son de tipo Usuario, nunca administrador
-            ejecutar("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,'usuario')",
-                     (usuario, generate_password_hash(clave)))
+            # Las cuentas públicas siempre son de tipo Usuario y quedan activas
+            ejecutar("""INSERT INTO cuentas(usuario, clave, rol, nombre, puesto, activo)
+                        VALUES(%s,%s,'usuario',%s,'Sin asignar',1)""",
+                     (usuario, generate_password_hash(clave), nombre))
         except psycopg2.IntegrityError:
             flash("Ese nombre de usuario ya está en uso. Elige otro.", "error")
             return render_auth("registro")
@@ -1469,8 +1444,7 @@ def index():
     mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
     mod = consultar("SELECT * FROM planilla_mod ORDER BY id")
     cif = consultar("SELECT * FROM costos_cif ORDER BY id")
-    usuarios = consultar("SELECT * FROM usuarios ORDER BY id")
-    cuentas = consultar("SELECT id, usuario, rol FROM cuentas ORDER BY id")
+    personas = consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
     rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
                         SUM(v.cantidad*p.costo) AS cv FROM ventas v
                         JOIN platos p ON p.nombre=v.plato
@@ -1519,11 +1493,11 @@ def index():
         ind=indicadores(), platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
-        usuarios=usuarios, cuentas=cuentas, reportes=reportes, ficha=ficha, eq=eq,
-        campos={t: campos_de(t) for t in CAMPOS},
+        personas=personas, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
+        ficha=ficha, eq=eq, campos={t: campos_de(t) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
-        usuario=session.get("usuario", ""), rol_txt=ROL_CUENTA.get(rol, "Usuario"),
-        es_admin=es_admin(), csrf_tok=token_csrf(),
+        usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
+        rol_txt=ROL_CUENTA.get(rol, "Usuario"), es_admin=es_admin(), csrf_tok=token_csrf(),
     )
 
 
@@ -1557,48 +1531,46 @@ def eliminar(tabla, id_):
     return redirect(url_for("index", tab=tab))
 
 
-@app.route("/usuarios/<int:id_>/toggle", methods=["POST"])
-def toggle_usuario(id_):
+@app.route("/personas/crear", methods=["POST"])
+def crear_persona():
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    ejecutar("UPDATE usuarios SET activo = 1 - activo WHERE id=%s", (id_,))
-    return redirect(url_for("index", tab="usuarios"))
-
-
-@app.route("/cuentas/crear", methods=["POST"])
-def crear_cuenta():
-    if solo_admin():
-        return redirect(url_for("index", tab="usuarios"))
+    nombre = request.form.get("nombre", "").strip()
+    puesto = request.form.get("puesto", "Sin asignar")
     usuario = request.form.get("usuario", "").strip()
     clave = request.form.get("clave", "")
     rol = request.form.get("rol", "usuario")
-    if not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
-        flash("El nombre de usuario debe tener de 3 a 30 letras, números, punto o guion bajo.", "error")
+    if not 3 <= len(nombre) <= 60:
+        flash("El nombre debe tener entre 3 y 60 caracteres.", "error")
+    elif puesto not in PUESTOS_PERSONA:
+        flash("Puesto no válido.", "error")
+    elif not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
+        flash("El usuario debe tener de 3 a 30 letras, números, punto o guion bajo.", "error")
     elif len(clave) < 10 or len(clave) > 128:
         flash("La contraseña debe tener entre 10 y 128 caracteres.", "error")
     elif rol not in ROL_CUENTA:
         flash("Rol no válido.", "error")
     else:
         try:
-            ejecutar("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
-                     (usuario, generate_password_hash(clave), rol))
-            flash(f"Cuenta '{usuario}' creada como {ROL_CUENTA[rol]}.", "ok")
+            ejecutar("INSERT INTO cuentas(usuario, clave, rol, nombre, puesto, activo) VALUES(%s,%s,%s,%s,%s,1)",
+                     (usuario, generate_password_hash(clave), rol, nombre, puesto))
+            flash(f"{nombre} fue agregado como {ROL_CUENTA[rol]}.", "ok")
         except psycopg2.IntegrityError:
-            flash("Ese nombre de usuario ya existe.", "error")
+            flash("Ese usuario ya existe.", "error")
     return redirect(url_for("index", tab="usuarios"))
 
 
-@app.route("/cuentas/<int:id_>/rol", methods=["POST"])
+@app.route("/personas/<int:id_>/rol", methods=["POST"])
 def cambiar_rol(id_):
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    fila = consultar("SELECT usuario, rol FROM cuentas WHERE id=%s", (id_,), uno=True)
+    fila = consultar("SELECT usuario, rol, activo FROM cuentas WHERE id=%s", (id_,), uno=True)
     if not fila:
-        flash("Cuenta no encontrada.", "error")
+        flash("Persona no encontrada.", "error")
     elif fila["usuario"] == session["usuario"]:
         flash("No puedes cambiar tu propio rol.", "error")
-    elif fila["rol"] == "admin" and contar_admins() <= 1:
-        flash("Debe quedar al menos un administrador.", "error")
+    elif fila["rol"] == "admin" and quedaria_sin_admin(fila):
+        flash("Debe quedar al menos un administrador activo.", "error")
     else:
         nuevo = "usuario" if fila["rol"] == "admin" else "admin"
         ejecutar("UPDATE cuentas SET rol=%s WHERE id=%s", (nuevo, id_))
@@ -1606,37 +1578,55 @@ def cambiar_rol(id_):
     return redirect(url_for("index", tab="usuarios"))
 
 
-@app.route("/cuentas/<int:id_>/eliminar", methods=["POST"])
-def eliminar_cuenta(id_):
+@app.route("/personas/<int:id_>/estado", methods=["POST"])
+def cambiar_estado(id_):
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    fila = consultar("SELECT usuario, rol FROM cuentas WHERE id=%s", (id_,), uno=True)
+    fila = consultar("SELECT usuario, rol, activo FROM cuentas WHERE id=%s", (id_,), uno=True)
     if not fila:
-        flash("Cuenta no encontrada.", "error")
+        flash("Persona no encontrada.", "error")
     elif fila["usuario"] == session["usuario"]:
-        flash("No puedes eliminar tu propia cuenta.", "error")
-    elif fila["rol"] == "admin" and contar_admins() <= 1:
-        flash("Debe quedar al menos un administrador.", "error")
+        flash("No puedes desactivar tu propia cuenta.", "error")
+    elif fila["activo"] == 1 and quedaria_sin_admin(fila):
+        flash("Debe quedar al menos un administrador activo.", "error")
     else:
-        ejecutar("DELETE FROM cuentas WHERE id=%s", (id_,))
-        flash(f"Cuenta '{fila['usuario']}' eliminada.", "ok")
+        nuevo = 0 if fila["activo"] == 1 else 1
+        ejecutar("UPDATE cuentas SET activo=%s WHERE id=%s", (nuevo, id_))
+        flash(f"'{fila['usuario']}' {'activado' if nuevo else 'desactivado'}.", "ok")
     return redirect(url_for("index", tab="usuarios"))
 
 
-@app.route("/cuentas/clave", methods=["POST"])
+@app.route("/personas/<int:id_>/eliminar", methods=["POST"])
+def eliminar_persona(id_):
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    fila = consultar("SELECT usuario, rol, activo FROM cuentas WHERE id=%s", (id_,), uno=True)
+    if not fila:
+        flash("Persona no encontrada.", "error")
+    elif fila["usuario"] == session["usuario"]:
+        flash("No puedes eliminar tu propia cuenta.", "error")
+    elif quedaria_sin_admin(fila):
+        flash("Debe quedar al menos un administrador activo.", "error")
+    else:
+        ejecutar("DELETE FROM cuentas WHERE id=%s", (id_,))
+        flash(f"'{fila['usuario']}' fue eliminado.", "ok")
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/personas/clave", methods=["POST"])
 def restablecer_clave():
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
     cuenta_id = request.form.get("cuenta_id", "")
     nueva = request.form.get("nueva", "")
     if not cuenta_id.isdigit():
-        flash("Selecciona una cuenta válida.", "error")
+        flash("Selecciona una persona válida.", "error")
     elif len(nueva) < 10 or len(nueva) > 128:
         flash("La contraseña debe tener entre 10 y 128 caracteres.", "error")
     else:
         afectadas = ejecutar("UPDATE cuentas SET clave=%s WHERE id=%s",
                              (generate_password_hash(nueva), int(cuenta_id)))
-        flash("Contraseña restablecida." if afectadas else "Cuenta no encontrada.",
+        flash("Contraseña restablecida." if afectadas else "Persona no encontrada.",
               "ok" if afectadas else "error")
     return redirect(url_for("index", tab="usuarios"))
 
