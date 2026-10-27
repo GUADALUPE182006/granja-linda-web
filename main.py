@@ -5,10 +5,11 @@ import math
 import os
 import re
 import secrets
-import sqlite3
 import time
 from datetime import date, timedelta
 
+import psycopg2
+import psycopg2.extras
 from flask import (Flask, Response, abort, flash, get_flashed_messages, redirect,
                    render_template_string, request, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -22,10 +23,12 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     MAX_CONTENT_LENGTH=64 * 1024,
 )
-DB = os.environ.get("DB_PATH", "granja_linda.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 MAX_INTENTOS = 5
 VENTANA_BLOQUEO = 15 * 60
 intentos = {}  # ip -> (cantidad de fallos, momento del primer fallo)
+MAX_REGISTROS_HORA = 5
+registros = {}  # ip -> lista de momentos en que se crearon cuentas
 
 COMISION_APPS = 0.18
 CANALES = ["Salón", "Delivery propio", "Apps de delivery", "Llevar (take away)"]
@@ -153,69 +156,107 @@ GALLINA_SVG = """<svg viewBox="0 0 160 110" aria-hidden="true">
 </svg>"""
 
 
-# ---------- Base de datos ----------
+# ---------- Base de datos (Supabase / PostgreSQL) ----------
 def conectar():
-    con = sqlite3.connect(DB)
-    con.row_factory = sqlite3.Row
-    return con
+    if not DATABASE_URL:
+        raise RuntimeError("Falta la variable DATABASE_URL (cadena de conexión de Supabase).")
+    return psycopg2.connect(DATABASE_URL, sslmode="require",
+                            cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def consultar(sql, params=(), uno=False):
+    con = conectar()
+    try:
+        with con.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchone() if uno else cur.fetchall()
+    finally:
+        con.close()
+
+
+def ejecutar(sql, params=()):
+    con = conectar()
+    try:
+        with con.cursor() as cur:
+            cur.execute(sql, params)
+            filas = cur.rowcount
+        con.commit()
+        return filas
+    finally:
+        con.close()
+
+
+def escalar(sql, params=()):
+    fila = consultar(sql, params, uno=True)
+    return list(fila.values())[0] if fila else None
 
 
 def init_db():
     con = conectar()
-    con.executescript("""
-        CREATE TABLE IF NOT EXISTS platos (id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, costo REAL, precio REAL);
-        CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, plato TEXT, cantidad INTEGER, canal TEXT, pago TEXT);
-        CREATE TABLE IF NOT EXISTS mermas (id INTEGER PRIMARY KEY, fecha TEXT, insumo TEXT, cantidad REAL, costo REAL, causa TEXT);
-        CREATE TABLE IF NOT EXISTS planilla_mod (id INTEGER PRIMARY KEY, rol TEXT, sueldo REAL);
-        CREATE TABLE IF NOT EXISTS costos_cif (id INTEGER PRIMARY KEY, concepto TEXT, monto REAL);
-        CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT, rol TEXT, activo INTEGER DEFAULT 1);
+    cur = con.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS platos (id SERIAL PRIMARY KEY, nombre TEXT UNIQUE,
+            costo DOUBLE PRECISION, precio DOUBLE PRECISION);
+        CREATE TABLE IF NOT EXISTS ventas (id SERIAL PRIMARY KEY, fecha TEXT, plato TEXT,
+            cantidad INTEGER, canal TEXT, pago TEXT);
+        CREATE TABLE IF NOT EXISTS mermas (id SERIAL PRIMARY KEY, fecha TEXT, insumo TEXT,
+            cantidad DOUBLE PRECISION, costo DOUBLE PRECISION, causa TEXT);
+        CREATE TABLE IF NOT EXISTS planilla_mod (id SERIAL PRIMARY KEY, rol TEXT,
+            sueldo DOUBLE PRECISION);
+        CREATE TABLE IF NOT EXISTS costos_cif (id SERIAL PRIMARY KEY, concepto TEXT,
+            monto DOUBLE PRECISION);
+        CREATE TABLE IF NOT EXISTS usuarios (id SERIAL PRIMARY KEY, nombre TEXT, rol TEXT,
+            activo INTEGER DEFAULT 1);
         CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT);
-        CREATE TABLE IF NOT EXISTS cuentas (id INTEGER PRIMARY KEY, usuario TEXT UNIQUE NOT NULL,
+        CREATE TABLE IF NOT EXISTS cuentas (id SERIAL PRIMARY KEY, usuario TEXT UNIQUE NOT NULL,
             clave TEXT NOT NULL, rol TEXT NOT NULL DEFAULT 'usuario');
     """)
-    # Migración: bases creadas antes de existir el campo rol
-    columnas = [r[1] for r in con.execute("PRAGMA table_info(cuentas)")]
-    if "rol" not in columnas:
-        con.execute("ALTER TABLE cuentas ADD COLUMN rol TEXT NOT NULL DEFAULT 'usuario'")
+    for t in ["platos", "ventas", "mermas", "planilla_mod", "costos_cif",
+              "usuarios", "configuracion", "cuentas"]:
+        cur.execute(f"ALTER TABLE public.{t} ENABLE ROW LEVEL SECURITY;")
 
     semillas = {
-        "platos": ("INSERT INTO platos(nombre,costo,precio) VALUES(?,?,?)", [
+        "platos": ("INSERT INTO platos(nombre,costo,precio) VALUES(%s,%s,%s)", [
             ("1/4 Pollo", 22, 38), ("Pollo entero", 75, 115), ("Parrilla familiar", 110, 180)]),
-        "planilla_mod": ("INSERT INTO planilla_mod(rol,sueldo) VALUES(?,?)", [
+        "planilla_mod": ("INSERT INTO planilla_mod(rol,sueldo) VALUES(%s,%s)", [
             ("Cocinero(a) principal", 1200), ("Ayudante de cocina", 1025),
             ("Cajero(a)", 1025), ("Delivery", 1100)]),
-        "costos_cif": ("INSERT INTO costos_cif(concepto,monto) VALUES(?,?)", [
+        "costos_cif": ("INSERT INTO costos_cif(concepto,monto) VALUES(%s,%s)", [
             ("Servicios públicos", 850), ("Arrendamiento del local", 1500),
             ("Mantenimiento de equipos", 400), ("Arbitrios", 180)]),
-        "usuarios": ("INSERT INTO usuarios(nombre,rol) VALUES(?,?)", [
+        "usuarios": ("INSERT INTO usuarios(nombre,rol) VALUES(%s,%s)", [
             ("J. Castro", "Administrador"), ("M. Ramírez", "Caja"), ("L. Huamán", "Cocina")]),
     }
     for tabla, (sql, filas) in semillas.items():
-        if con.execute(f"SELECT COUNT(*) FROM {tabla}").fetchone()[0] == 0:
-            con.executemany(sql, filas)
+        cur.execute(f"SELECT COUNT(*) AS n FROM {tabla}")
+        if cur.fetchone()["n"] == 0:
+            cur.executemany(sql, filas)
 
-    # Cuenta de administrador: si ADMIN_PASSWORD está definida en Render,
-    # esa contraseña se aplica en cada arranque (es la fuente de verdad).
+    # Cuenta de administrador: si ADMIN_PASSWORD está definida en Render, esa es la contraseña
     admin_usuario = (os.environ.get("ADMIN_USER", "admin") or "admin").strip()
     clave_env = os.environ.get("ADMIN_PASSWORD", "")
-    fila = con.execute("SELECT id FROM cuentas WHERE usuario=?", (admin_usuario,)).fetchone()
+    cur.execute("SELECT id FROM cuentas WHERE usuario=%s", (admin_usuario,))
+    fila = cur.fetchone()
     if clave_env:
         if fila:
-            con.execute("UPDATE cuentas SET clave=?, rol='admin' WHERE id=?",
+            cur.execute("UPDATE cuentas SET clave=%s, rol='admin' WHERE id=%s",
                         (generate_password_hash(clave_env), fila["id"]))
         else:
-            con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
+            cur.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
                         (admin_usuario, generate_password_hash(clave_env), "admin"))
         print(f"[SEGURIDAD] Administrador '{admin_usuario}' listo con ADMIN_PASSWORD.")
-    elif fila is None and con.execute("SELECT COUNT(*) FROM cuentas").fetchone()[0] == 0:
-        clave_temp = secrets.token_urlsafe(10)
-        con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
-                    (admin_usuario, generate_password_hash(clave_temp), "admin"))
-        print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave_temp}")
+    else:
+        cur.execute("SELECT COUNT(*) AS n FROM cuentas")
+        if fila is None and cur.fetchone()["n"] == 0:
+            clave_temp = secrets.token_urlsafe(10)
+            cur.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
+                        (admin_usuario, generate_password_hash(clave_temp), "admin"))
+            print(f"[SEGURIDAD] No se definió ADMIN_PASSWORD. Contraseña temporal de '{admin_usuario}': {clave_temp}")
 
     # Garantiza que siempre exista al menos un administrador
-    if con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0] == 0:
-        con.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
+    cur.execute("SELECT COUNT(*) AS n FROM cuentas WHERE rol='admin'")
+    if cur.fetchone()["n"] == 0:
+        cur.execute("UPDATE cuentas SET rol='admin' WHERE id=(SELECT MIN(id) FROM cuentas)")
     con.commit()
     con.close()
 
@@ -225,31 +266,26 @@ init_db()
 
 def obtener_colores():
     colores = dict(COLORES_DEFECTO)
-    con = conectar()
-    filas = con.execute("SELECT clave, valor FROM configuracion").fetchall()
-    con.close()
-    for f in filas:
+    for f in consultar("SELECT clave, valor FROM configuracion"):
         if f["clave"] in colores and re.fullmatch(r"#[0-9a-f]{6}", f["valor"] or ""):
             colores[f["clave"]] = f["valor"]
     return colores
 
 
 def indicadores():
-    con = conectar()
-    ing = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                         JOIN platos p ON p.nombre=v.plato""").fetchone()[0]
-    ing_apps = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                              JOIN platos p ON p.nombre=v.plato
-                              WHERE v.canal='Apps de delivery'""").fetchone()[0]
-    cvar = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.costo),0) FROM ventas v
-                          JOIN platos p ON p.nombre=v.plato""").fetchone()[0]
-    dig = con.execute("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
-                         JOIN platos p ON p.nombre=v.plato
-                         WHERE v.pago<>'Efectivo'""").fetchone()[0]
-    mermas = con.execute("SELECT COALESCE(SUM(costo),0) FROM mermas").fetchone()[0]
-    mod = con.execute("SELECT COALESCE(SUM(sueldo),0) FROM planilla_mod").fetchone()[0]
-    cif = con.execute("SELECT COALESCE(SUM(monto),0) FROM costos_cif").fetchone()[0]
-    con.close()
+    ing = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                     JOIN platos p ON p.nombre=v.plato""")
+    ing_apps = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                          JOIN platos p ON p.nombre=v.plato
+                          WHERE v.canal='Apps de delivery'""")
+    cvar = escalar("""SELECT COALESCE(SUM(v.cantidad*p.costo),0) FROM ventas v
+                      JOIN platos p ON p.nombre=v.plato""")
+    dig = escalar("""SELECT COALESCE(SUM(v.cantidad*p.precio),0) FROM ventas v
+                     JOIN platos p ON p.nombre=v.plato
+                     WHERE v.pago<>'Efectivo'""")
+    mermas = escalar("SELECT COALESCE(SUM(costo),0) FROM mermas")
+    mod = escalar("SELECT COALESCE(SUM(sueldo),0) FROM planilla_mod")
+    cif = escalar("SELECT COALESCE(SUM(monto),0) FROM costos_cif")
 
     contrib = ing - ing_apps * COMISION_APPS - cvar
     fijos = mod + cif
@@ -263,9 +299,7 @@ def indicadores():
 
 
 def campos_de(tabla):
-    con = conectar()
-    nombres = [r[0] for r in con.execute("SELECT nombre FROM platos ORDER BY id")]
-    con.close()
+    nombres = [r["nombre"] for r in consultar("SELECT nombre FROM platos ORDER BY id")]
     return [(n, e, t, nombres if n == "plato" else o) for n, e, t, o in CAMPOS[tabla]]
 
 
@@ -328,6 +362,14 @@ def registrar_fallo(ip):
     intentos[ip] = (n + 1, desde)
 
 
+def registro_permitido(ip):
+    """Máximo de cuentas nuevas por hora desde una misma conexión."""
+    ahora = time.time()
+    recientes = [t for t in registros.get(ip, []) if ahora - t < 3600]
+    registros[ip] = recientes
+    return len(recientes) < MAX_REGISTROS_HORA
+
+
 def es_admin():
     return session.get("rol") == "admin"
 
@@ -340,11 +382,11 @@ def solo_admin():
     return False
 
 
-def contar_admins(con):
-    return con.execute("SELECT COUNT(*) FROM cuentas WHERE rol='admin'").fetchone()[0]
+def contar_admins():
+    return escalar("SELECT COUNT(*) FROM cuentas WHERE rol='admin'")
 
 
-PUBLICAS = {"login", "static"}
+PUBLICAS = {"login", "registro", "static"}
 
 
 @app.before_request
@@ -361,10 +403,7 @@ def control_acceso():
         return None
     if "usuario" not in session:
         return redirect(url_for("login"))
-    # Relee el rol y confirma que la cuenta todavía existe
-    con = conectar()
-    fila = con.execute("SELECT rol FROM cuentas WHERE usuario=?", (session["usuario"],)).fetchone()
-    con.close()
+    fila = consultar("SELECT rol FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
     if not fila:
         session.clear()
         return redirect(url_for("login"))
@@ -388,14 +427,14 @@ def cabeceras_seguridad(resp):
     return resp
 
 
-# ---------- Plantilla de inicio de sesión ----------
-LOGIN_HTML = """
+# ---------- Plantilla de inicio de sesión y registro ----------
+AUTH_HTML = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Iniciar sesión - La Granja Linda</title>
+<title>{% if vista == 'registro' %}Crear cuenta{% else %}Iniciar sesión{% endif %} - La Granja Linda</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 :root{--tx:#2a1a0e;--mu:#7d6b5d}
@@ -450,6 +489,7 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
 .ver{position:absolute;right:10px;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:#8c8076;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:20px}
 .ver:hover{background:#f6f1ec;color:var(--p)}
+.ayuda{font-size:13px;color:var(--mu);margin:-6px 0 14px}
 
 .fila{display:flex;justify-content:space-between;align-items:center;margin:4px 0 22px;font-size:14px}
 .rec{display:flex;align-items:center;gap:10px;color:#4a3a2e;cursor:pointer}
@@ -464,9 +504,11 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
 .entrar i{font-size:22px}
 
 .pie{margin:26px 0 0;padding-top:20px;border-top:1px solid #efe7de;text-align:center;font-size:14px;color:var(--mu)}
-.pie b{color:var(--p-osc);font-weight:500}
+.pie a{color:var(--p-osc);text-decoration:none}
+.pie b{font-weight:600}
 
 .flash{background:#fdeeee;color:#a8322d;padding:12px 16px;border-radius:12px;margin-bottom:18px;font-size:14px}
+.flash.ok{background:#eef7ea;color:#3f7d21}
 
 @media(max-width:820px){
   .shell{grid-template-columns:1fr;min-height:0}
@@ -507,42 +549,64 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
   </section>
 
   <section class="der">
-    <h1>Iniciar sesión</h1>
-    <p class="sub">Selecciona el tipo de cuenta e ingresa tus datos para continuar.</p>
+    {% if vista == 'registro' %}
+      <h1>Crear cuenta</h1>
+      <p class="sub">Regístrate para entrar al sistema. Tu cuenta será de tipo Usuario.</p>
+    {% else %}
+      <h1>Iniciar sesión</h1>
+      <p class="sub">Selecciona el tipo de cuenta e ingresa tus datos para continuar.</p>
+    {% endif %}
 
-    {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
 
+    {% if vista != 'registro' %}
     <div class="tabs" role="tablist">
       <button type="button" class="tab {{ 'on' if tipo == 'usuario' else '' }}" data-tipo="usuario" role="tab">
         <i class="ti ti-user" aria-hidden="true"></i>Usuario</button>
       <button type="button" class="tab {{ 'on' if tipo == 'admin' else '' }}" data-tipo="admin" role="tab">
         <i class="ti ti-shield-check" aria-hidden="true"></i>Administrador</button>
     </div>
+    {% endif %}
 
-    <form method="post" action="{{ url_for('login') }}" autocomplete="on">
+    <form method="post" action="{{ url_for('registro') if vista == 'registro' else url_for('login') }}" autocomplete="on">
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
-      <input type="hidden" name="tipo" id="tipo" value="{{ tipo }}">
+      {% if vista != 'registro' %}<input type="hidden" name="tipo" id="tipo" value="{{ tipo }}">{% endif %}
 
       <label class="campo">Usuario
         <span class="caja"><i class="ti ti-user ic" aria-hidden="true"></i>
-          <input type="text" name="usuario" placeholder="Ingresa tu usuario" autocomplete="username" required maxlength="50"></span>
+          <input type="text" name="usuario" placeholder="{{ 'Elige un nombre de usuario' if vista == 'registro' else 'Ingresa tu usuario' }}"
+            autocomplete="username" required maxlength="30" {% if vista == 'registro' %}pattern="[A-Za-z0-9_.]{3,30}"{% else %}maxlength="50"{% endif %}></span>
       </label>
+      {% if vista == 'registro' %}<p class="ayuda">De 3 a 30 letras, números, punto o guion bajo.</p>{% endif %}
 
       <label class="campo">Contraseña
         <span class="caja"><i class="ti ti-lock ic" aria-hidden="true"></i>
-          <input type="password" name="clave" id="clave" placeholder="Ingresa tu contraseña" autocomplete="current-password" required maxlength="200">
+          <input type="password" name="clave" id="clave" placeholder="{{ 'Mínimo 10 caracteres' if vista == 'registro' else 'Ingresa tu contraseña' }}"
+            autocomplete="{{ 'new-password' if vista == 'registro' else 'current-password' }}" required minlength="{{ 10 if vista == 'registro' else 1 }}" maxlength="200">
           <button type="button" class="ver" id="ver" aria-label="Mostrar u ocultar contraseña"><i class="ti ti-eye" aria-hidden="true"></i></button></span>
       </label>
 
+      {% if vista == 'registro' %}
+      <label class="campo">Repite la contraseña
+        <span class="caja"><i class="ti ti-lock ic" aria-hidden="true"></i>
+          <input type="password" name="confirmar" placeholder="Vuelve a escribir la contraseña" autocomplete="new-password" required minlength="10" maxlength="128"></span>
+      </label>
+      <div style="height:8px"></div>
+      <button class="entrar" type="submit"><i class="ti ti-user-plus" aria-hidden="true"></i>Crear cuenta</button>
+      {% else %}
       <div class="fila">
         <label class="rec"><input type="checkbox"> Recordarme</label>
         <a href="#" class="olvide" id="olvide">¿Olvidaste tu contraseña?</a>
       </div>
-
       <button class="entrar" type="submit"><i class="ti ti-login-2" aria-hidden="true"></i>Iniciar sesión</button>
+      {% endif %}
     </form>
 
-    <p class="pie">¿No tienes una cuenta? <b>Contacta al administrador</b></p>
+    {% if vista == 'registro' %}
+      <p class="pie">¿Ya tienes una cuenta? <a href="{{ url_for('login') }}"><b>Iniciar sesión</b></a></p>
+    {% else %}
+      <p class="pie">¿No tienes una cuenta? <a href="{{ url_for('registro') }}"><b>Crear cuenta</b></a></p>
+    {% endif %}
   </section>
 </main>
 
@@ -554,7 +618,7 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
     t.addEventListener('click', function () {
       tabs.forEach(function (x) { x.classList.remove('on'); });
       t.classList.add('on');
-      tipo.value = t.getAttribute('data-tipo');
+      if (tipo) tipo.value = t.getAttribute('data-tipo');
     });
   });
 
@@ -566,10 +630,13 @@ input:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 4px color-mix(in
     ver.innerHTML = '<i class="ti ' + (oculta ? 'ti-eye-off' : 'ti-eye') + '" aria-hidden="true"></i>';
   });
 
-  document.getElementById('olvide').addEventListener('click', function (e) {
-    e.preventDefault();
-    alert('Pide a tu administrador que restablezca tu contraseña.');
-  });
+  var olvide = document.getElementById('olvide');
+  if (olvide) {
+    olvide.addEventListener('click', function (e) {
+      e.preventDefault();
+      alert('Pide a tu administrador que restablezca tu contraseña.');
+    });
+  }
 })();
 </script>
 </body>
@@ -1101,7 +1168,7 @@ td.acc form{display:inline-block;margin-left:4px}
   </div>
 
   <div class="card">
-    {{ banner('key', 'Cuentas de acceso', 'Crea cuentas para iniciar sesión. El administrador puede hacer todo; el usuario puede ver todo y registrar ventas y mermas.', 'naranja') }}
+    {{ banner('key', 'Cuentas de acceso', 'Las personas también pueden crear su cuenta desde la pantalla de inicio de sesión. Aquí puedes administrarlas.', 'naranja') }}
     <form class="reg" method="post" action="{{ url_for('crear_cuenta') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
       <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Nombre de usuario</span>
@@ -1284,10 +1351,11 @@ document.addEventListener('pointerdown', function (e) {
 
 
 # ---------- Acceso ----------
-def render_login(tipo="usuario"):
+def render_auth(vista="login", tipo="usuario"):
     colores = obtener_colores()
-    return render_template_string(LOGIN_HTML, tema=tema_css(colores), csrf_tok=token_csrf(),
-                                  logo_img=logo_archivo(), casa_svg=CASA_SVG, tipo=tipo)
+    return render_template_string(AUTH_HTML, vista=vista, tema=tema_css(colores),
+                                  csrf_tok=token_csrf(), logo_img=logo_archivo(),
+                                  casa_svg=CASA_SVG, tipo=tipo)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1304,16 +1372,14 @@ def login():
         ip = ip_actual()
         if bloqueado(ip):
             flash("Demasiados intentos fallidos. Espera 15 minutos e inténtalo de nuevo.", "error")
-            return render_login(tipo)
+            return render_auth("login", tipo)
         usuario = request.form.get("usuario", "").strip()[:50]
         clave = request.form.get("clave", "")[:200]
-        con = conectar()
-        fila = con.execute("SELECT * FROM cuentas WHERE usuario=?", (usuario,)).fetchone()
-        con.close()
+        fila = consultar("SELECT * FROM cuentas WHERE usuario=%s", (usuario,), uno=True)
         if fila and check_password_hash(fila["clave"], clave):
             if tipo == "admin" and fila["rol"] != "admin":
                 flash("Esta cuenta no es de administrador. Selecciona la pestaña Usuario.", "error")
-                return render_login(tipo)
+                return render_auth("login", tipo)
             intentos.pop(ip, None)
             session.clear()
             session.permanent = True
@@ -1323,7 +1389,46 @@ def login():
             return redirect(url_for("index"))
         registrar_fallo(ip)
         flash("Usuario o contraseña incorrectos.", "error")
-    return render_login(tipo)
+    return render_auth("login", tipo)
+
+
+@app.route("/registro", methods=["GET", "POST"])
+def registro():
+    token_csrf()
+    if request.method == "POST":
+        ip = ip_actual()
+        if not registro_permitido(ip):
+            flash("Se alcanzó el límite de cuentas creadas desde tu conexión. Inténtalo más tarde.", "error")
+            return render_auth("registro")
+
+        usuario = request.form.get("usuario", "").strip()
+        clave = request.form.get("clave", "")
+        confirmar = request.form.get("confirmar", "")
+
+        error = None
+        if not re.fullmatch(r"[A-Za-z0-9_.]{3,30}", usuario):
+            error = "El nombre de usuario debe tener de 3 a 30 letras, números, punto o guion bajo."
+        elif len(clave) < 10 or len(clave) > 128:
+            error = "La contraseña debe tener entre 10 y 128 caracteres."
+        elif clave != confirmar:
+            error = "La confirmación no coincide con la contraseña."
+
+        if error:
+            flash(error, "error")
+            return render_auth("registro")
+
+        try:
+            # Las cuentas públicas siempre son de tipo Usuario, nunca administrador
+            ejecutar("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,'usuario')",
+                     (usuario, generate_password_hash(clave)))
+        except psycopg2.IntegrityError:
+            flash("Ese nombre de usuario ya está en uso. Elige otro.", "error")
+            return render_auth("registro")
+
+        registros.setdefault(ip, []).append(time.time())
+        flash("Cuenta creada. Ya puedes iniciar sesión.", "ok")
+        return redirect(url_for("login"))
+    return render_auth("registro")
 
 
 @app.route("/salir", methods=["POST"])
@@ -1342,16 +1447,13 @@ def cambiar_clave():
     elif nueva != confirmar:
         flash("La confirmación no coincide con la nueva contraseña.", "error")
     else:
-        con = conectar()
-        fila = con.execute("SELECT * FROM cuentas WHERE usuario=?", (session["usuario"],)).fetchone()
+        fila = consultar("SELECT * FROM cuentas WHERE usuario=%s", (session["usuario"],), uno=True)
         if fila and check_password_hash(fila["clave"], actual):
-            con.execute("UPDATE cuentas SET clave=? WHERE usuario=?",
-                        (generate_password_hash(nueva), session["usuario"]))
-            con.commit()
+            ejecutar("UPDATE cuentas SET clave=%s WHERE usuario=%s",
+                     (generate_password_hash(nueva), session["usuario"]))
             flash("Contraseña actualizada.", "ok")
         else:
             flash("La contraseña actual no es correcta.", "error")
-        con.close()
     return redirect(url_for("index", tab="configuracion"))
 
 
@@ -1359,20 +1461,20 @@ def cambiar_clave():
 @app.route("/")
 def index():
     tab = request.args.get("tab", "dashboard")
-    con = conectar()
-    platos = con.execute("""SELECT nombre, costo, precio,
-                            ROUND((precio-costo)*100.0/precio,1) AS margen
-                            FROM platos ORDER BY margen DESC""").fetchall()
-    ventas = con.execute("SELECT * FROM ventas ORDER BY id DESC").fetchall()
-    mermas = con.execute("SELECT * FROM mermas ORDER BY id DESC").fetchall()
-    mod = con.execute("SELECT * FROM planilla_mod ORDER BY id").fetchall()
-    cif = con.execute("SELECT * FROM costos_cif ORDER BY id").fetchall()
-    usuarios = con.execute("SELECT * FROM usuarios ORDER BY id").fetchall()
-    cuentas = con.execute("SELECT id, usuario, rol FROM cuentas ORDER BY id").fetchall()
-    rows = con.execute("""SELECT substr(v.fecha,1,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
-                          SUM(v.cantidad*p.costo) AS cv FROM ventas v
-                          JOIN platos p ON p.nombre=v.plato GROUP BY mes ORDER BY mes""").fetchall()
-    con.close()
+    platos = [dict(p, margen=float(p["margen"])) for p in consultar("""
+        SELECT nombre, costo, precio,
+               ROUND((((precio-costo)*100.0/precio))::numeric, 1) AS margen
+        FROM platos ORDER BY margen DESC""")]
+    ventas = consultar("SELECT * FROM ventas ORDER BY id DESC")
+    mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
+    mod = consultar("SELECT * FROM planilla_mod ORDER BY id")
+    cif = consultar("SELECT * FROM costos_cif ORDER BY id")
+    usuarios = consultar("SELECT * FROM usuarios ORDER BY id")
+    cuentas = consultar("SELECT id, usuario, rol FROM cuentas ORDER BY id")
+    rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
+                        SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                        JOIN platos p ON p.nombre=v.plato
+                        GROUP BY LEFT(v.fecha,7) ORDER BY mes""")
 
     reportes = []
     for r in rows:
@@ -1439,11 +1541,8 @@ def agregar(tabla):
         flash(str(err), "error")
         return redirect(url_for("index", tab=tab))
     cols = ", ".join(datos)
-    marcas = ", ".join("?" * len(datos))
-    con = conectar()
-    con.execute(f"INSERT INTO {tabla} ({cols}) VALUES ({marcas})", list(datos.values()))
-    con.commit()
-    con.close()
+    marcas = ", ".join(["%s"] * len(datos))
+    ejecutar(f"INSERT INTO {tabla} ({cols}) VALUES ({marcas})", list(datos.values()))
     return redirect(url_for("index", tab=tab))
 
 
@@ -1454,10 +1553,7 @@ def eliminar(tabla, id_):
     tab = request.form.get("tab", "dashboard")
     if solo_admin():
         return redirect(url_for("index", tab=tab))
-    con = conectar()
-    con.execute(f"DELETE FROM {tabla} WHERE id=?", (id_,))
-    con.commit()
-    con.close()
+    ejecutar(f"DELETE FROM {tabla} WHERE id=%s", (id_,))
     return redirect(url_for("index", tab=tab))
 
 
@@ -1465,10 +1561,7 @@ def eliminar(tabla, id_):
 def toggle_usuario(id_):
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    con = conectar()
-    con.execute("UPDATE usuarios SET activo = 1 - activo WHERE id=?", (id_,))
-    con.commit()
-    con.close()
+    ejecutar("UPDATE usuarios SET activo = 1 - activo WHERE id=%s", (id_,))
     return redirect(url_for("index", tab="usuarios"))
 
 
@@ -1486,16 +1579,12 @@ def crear_cuenta():
     elif rol not in ROL_CUENTA:
         flash("Rol no válido.", "error")
     else:
-        con = conectar()
         try:
-            con.execute("INSERT INTO cuentas(usuario, clave, rol) VALUES(?,?,?)",
-                        (usuario, generate_password_hash(clave), rol))
-            con.commit()
+            ejecutar("INSERT INTO cuentas(usuario, clave, rol) VALUES(%s,%s,%s)",
+                     (usuario, generate_password_hash(clave), rol))
             flash(f"Cuenta '{usuario}' creada como {ROL_CUENTA[rol]}.", "ok")
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
             flash("Ese nombre de usuario ya existe.", "error")
-        finally:
-            con.close()
     return redirect(url_for("index", tab="usuarios"))
 
 
@@ -1503,20 +1592,17 @@ def crear_cuenta():
 def cambiar_rol(id_):
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    con = conectar()
-    fila = con.execute("SELECT usuario, rol FROM cuentas WHERE id=?", (id_,)).fetchone()
+    fila = consultar("SELECT usuario, rol FROM cuentas WHERE id=%s", (id_,), uno=True)
     if not fila:
         flash("Cuenta no encontrada.", "error")
     elif fila["usuario"] == session["usuario"]:
         flash("No puedes cambiar tu propio rol.", "error")
-    elif fila["rol"] == "admin" and contar_admins(con) <= 1:
+    elif fila["rol"] == "admin" and contar_admins() <= 1:
         flash("Debe quedar al menos un administrador.", "error")
     else:
         nuevo = "usuario" if fila["rol"] == "admin" else "admin"
-        con.execute("UPDATE cuentas SET rol=? WHERE id=?", (nuevo, id_))
-        con.commit()
+        ejecutar("UPDATE cuentas SET rol=%s WHERE id=%s", (nuevo, id_))
         flash(f"'{fila['usuario']}' ahora es {ROL_CUENTA[nuevo]}.", "ok")
-    con.close()
     return redirect(url_for("index", tab="usuarios"))
 
 
@@ -1524,19 +1610,16 @@ def cambiar_rol(id_):
 def eliminar_cuenta(id_):
     if solo_admin():
         return redirect(url_for("index", tab="usuarios"))
-    con = conectar()
-    fila = con.execute("SELECT usuario, rol FROM cuentas WHERE id=?", (id_,)).fetchone()
+    fila = consultar("SELECT usuario, rol FROM cuentas WHERE id=%s", (id_,), uno=True)
     if not fila:
         flash("Cuenta no encontrada.", "error")
     elif fila["usuario"] == session["usuario"]:
         flash("No puedes eliminar tu propia cuenta.", "error")
-    elif fila["rol"] == "admin" and contar_admins(con) <= 1:
+    elif fila["rol"] == "admin" and contar_admins() <= 1:
         flash("Debe quedar al menos un administrador.", "error")
     else:
-        con.execute("DELETE FROM cuentas WHERE id=?", (id_,))
-        con.commit()
+        ejecutar("DELETE FROM cuentas WHERE id=%s", (id_,))
         flash(f"Cuenta '{fila['usuario']}' eliminada.", "ok")
-    con.close()
     return redirect(url_for("index", tab="usuarios"))
 
 
@@ -1551,12 +1634,8 @@ def restablecer_clave():
     elif len(nueva) < 10 or len(nueva) > 128:
         flash("La contraseña debe tener entre 10 y 128 caracteres.", "error")
     else:
-        con = conectar()
-        cur = con.execute("UPDATE cuentas SET clave=? WHERE id=?",
-                          (generate_password_hash(nueva), int(cuenta_id)))
-        con.commit()
-        afectadas = cur.rowcount
-        con.close()
+        afectadas = ejecutar("UPDATE cuentas SET clave=%s WHERE id=%s",
+                             (generate_password_hash(nueva), int(cuenta_id)))
         flash("Contraseña restablecida." if afectadas else "Cuenta no encontrada.",
               "ok" if afectadas else "error")
     return redirect(url_for("index", tab="usuarios"))
@@ -1573,12 +1652,9 @@ def guardar_colores():
             flash("Los colores deben tener el formato #RRGGBB.", "error")
             return redirect(url_for("index", tab="configuracion"))
         nuevos[clave] = valor
-    con = conectar()
-    con.executemany("""INSERT INTO configuracion(clave, valor) VALUES(?, ?)
-                       ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor""",
-                    list(nuevos.items()))
-    con.commit()
-    con.close()
+    for clave, valor in nuevos.items():
+        ejecutar("""INSERT INTO configuracion(clave, valor) VALUES(%s, %s)
+                    ON CONFLICT(clave) DO UPDATE SET valor = EXCLUDED.valor""", (clave, valor))
     flash("Colores guardados. Se aplican a todas las secciones.", "ok")
     return redirect(url_for("index", tab="configuracion"))
 
@@ -1587,21 +1663,17 @@ def guardar_colores():
 def restaurar_colores():
     if solo_admin():
         return redirect(url_for("index", tab="configuracion"))
-    con = conectar()
-    con.execute("DELETE FROM configuracion")
-    con.commit()
-    con.close()
+    ejecutar("DELETE FROM configuracion")
     flash("Se restauraron los colores originales.", "ok")
     return redirect(url_for("index", tab="configuracion"))
 
 
 @app.route("/exportar.csv")
 def exportar():
-    con = conectar()
-    rows = con.execute("""SELECT substr(v.fecha,1,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
-                          SUM(v.cantidad*p.costo) AS cv FROM ventas v
-                          JOIN platos p ON p.nombre=v.plato GROUP BY mes ORDER BY mes""").fetchall()
-    con.close()
+    rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
+                        SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                        JOIN platos p ON p.nombre=v.plato
+                        GROUP BY LEFT(v.fecha,7) ORDER BY mes""")
     salida = io.StringIO()
     w = csv.writer(salida)
     w.writerow(["Mes", "Ingresos", "Costo variable", "Margen bruto", "Margen %"])
