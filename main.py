@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import hmac
 import io
 import math
@@ -15,7 +16,11 @@ from flask import (Flask, Response, abort, flash, get_flashed_messages, redirect
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+# Si no hay SECRET_KEY se deriva una clave estable, igual en todos los procesos y reinicios
+# (con una clave aleatoria por proceso, las sesiones y el CSRF fallan de forma intermitente).
+app.secret_key = os.environ.get("SECRET_KEY") or hashlib.sha256(
+    ("granja-linda|" + os.environ.get("DATABASE_URL", "") + "|" + os.environ.get("ADMIN_PASSWORD", "")).encode()
+).hexdigest()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
