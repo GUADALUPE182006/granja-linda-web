@@ -729,7 +729,14 @@ header{grid-column:1/-1;background:linear-gradient(90deg,var(--p),var(--p-osc));
 .marca{display:flex;align-items:center;gap:14px}
 .marca .casa{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;padding:6px}
 .marca .casa svg{width:100%;height:100%}
-.marca img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:12px;padding:4px}
+.marca img{width:60px;height:60px;object-fit:contain;background:#fff;border-radius:14px;padding:2px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.plato{flex:1;display:flex;align-items:center;justify-content:center;gap:12px;min-width:0;pointer-events:none}
+.plato svg{height:66px;width:auto;filter:drop-shadow(0 3px 4px rgba(0,0,0,.25))}
+.plato small{font-size:11px;letter-spacing:2.5px;text-transform:uppercase;color:#fff;opacity:.9;line-height:1.5;white-space:nowrap}
+.plato small b{display:block;font-size:15px;letter-spacing:.5px;text-transform:none;font-weight:600;opacity:1}
+@keyframes vapor{0%{opacity:0;transform:translateY(4px)}50%{opacity:.8}100%{opacity:0;transform:translateY(-6px)}}
+.plato .v{animation:vapor 3s ease-in-out infinite}.plato .v2{animation-delay:-1.4s}
+@media(max-width:1100px){.plato{display:none}}
 .marca h1{margin:0;font-size:21px;font-weight:500}
 .marca small{display:block;font-size:11px;letter-spacing:2.5px;color:#fff;opacity:.85;text-transform:uppercase;margin-top:2px}
 .derecha{display:flex;align-items:center;gap:12px;font-size:13px;color:#fff;flex-wrap:wrap}
@@ -975,6 +982,30 @@ td.acc form{display:inline-block;margin-left:4px}
       <h1>La Granja Linda</h1>
       <small>Pollería · Gestión de costos</small>
     </div>
+  </div>
+  <div class="plato" aria-hidden="true">
+    <svg viewBox="0 0 120 70" xmlns="http://www.w3.org/2000/svg">
+      <g fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+        <path class="v" d="M48 16c-4-4 4-7 0-12"/><path class="v v2" d="M62 14c-4-4 4-7 0-12"/><path class="v" d="M76 16c-4-4 4-7 0-12"/>
+      </g>
+      <ellipse cx="60" cy="58" rx="54" ry="9" fill="#7a2e0c" opacity=".35"/>
+      <ellipse cx="60" cy="50" rx="54" ry="14" fill="#fff"/>
+      <ellipse cx="60" cy="49" rx="42" ry="9.5" fill="#fbe9d0"/>
+      <g stroke="#b9772a" stroke-width="1.4">
+        <rect x="22" y="34" width="22" height="16" rx="6" fill="#f6c453" transform="rotate(-14 33 42)"/>
+        <rect x="72" y="33" width="24" height="17" rx="6" fill="#f2b93e" transform="rotate(12 84 41)"/>
+        <rect x="88" y="40" width="18" height="12" rx="5" fill="#f6c453" transform="rotate(-8 97 46)"/>
+        <rect x="12" y="42" width="18" height="12" rx="5" fill="#f2b93e" transform="rotate(10 21 48)"/>
+      </g>
+      <g>
+        <path d="M44 30c0-10 10-17 22-15 11 2 16 10 12 19-4 8-14 12-25 10-6-1-9-6-9-14z" fill="#d9822b" stroke="#8a4513" stroke-width="1.8"/>
+        <path d="M52 22c5-4 13-4 18 0" fill="none" stroke="#f3b25e" stroke-width="3" stroke-linecap="round"/>
+        <path d="M48 41l-10 10" stroke="#f5ecdc" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="34.5" cy="52.5" r="3.6" fill="#f5ecdc"/><circle cx="40" cy="55" r="3.6" fill="#f5ecdc"/>
+      </g>
+      <g fill="#3c9a4a"><circle cx="58" cy="44" r="2"/><circle cx="64" cy="46" r="1.6"/><circle cx="50" cy="47" r="1.6"/><circle cx="80" cy="46" r="1.8"/><circle cx="30" cy="46" r="1.6"/></g>
+    </svg>
+    <small>Hoy se cocina<b>Papas con pollo</b></small>
   </div>
   <div class="derecha">
     <span>{{ ico('calendar') }} Octubre 2026 · Nuevo Chimbote</span>
