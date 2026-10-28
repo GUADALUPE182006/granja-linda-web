@@ -48,7 +48,7 @@ PUESTOS_PERSONA = ["Cajero(a)", "Cocinero(a)", "Ayudante de cocina", "Delivery",
                    "Limpieza", "Administración", "Compras", "Otro"]
 
 ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
-REGISTRO_USUARIO = {"ventas", "mermas"}
+REGISTRO_USUARIO = {"ventas", "mermas", "compras"}
 
 CAMPOS = {
     "ventas": [("fecha", "Fecha", "fecha", None), ("plato", "Plato", "texto", None),
@@ -324,6 +324,7 @@ def migrar_db():
                     cantidad DOUBLE PRECISION NOT NULL,
                     precio DOUBLE PRECISION NOT NULL)""")
     ejecutar("ALTER TABLE public.compras ENABLE ROW LEVEL SECURITY")
+    ejecutar("ALTER TABLE compras ADD COLUMN IF NOT EXISTS registrado_por TEXT NOT NULL DEFAULT ''")
 
 
 migrar_db()
@@ -1015,7 +1016,7 @@ html[data-tema="oscuro"] .fondo-anim{opacity:.35}
 {% endmacro %}
 
 {% macro registro(tabla, campos, columnas, filas, color='naranja', boton='Agregar') %}
-  {% if es_admin or tabla in ['ventas', 'mermas'] %}
+  {% if es_admin or tabla in ['ventas', 'mermas', 'compras'] %}
   <form class="reg {{ color }}" method="post" action="{{ url_for('agregar', tabla=tabla) }}">
     <input type="hidden" name="tab" value="{{ tab }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
@@ -1066,11 +1067,11 @@ html[data-tema="oscuro"] .fondo-anim{opacity:.35}
   {% if columnas %}
   <div class="tabla-wrap">
   <table>
-    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
+    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas', 'compras'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
       {% for c, lbl in columnas %}<td>{% if c in ['total', 'precio'] %}{{ f[c]|soles }}{% else %}{{ f[c] }}{% endif %}</td>{% endfor %}
-      {% if es_admin or (tabla in ['ventas', 'mermas'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
+      {% if es_admin or (tabla in ['ventas', 'mermas', 'compras'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
       <td class="acc">
         <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" onsubmit="return confirm('¿Seguro que quieres eliminar?')">
           <input type="hidden" name="tab" value="{{ tab }}">
