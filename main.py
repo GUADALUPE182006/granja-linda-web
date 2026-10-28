@@ -302,6 +302,23 @@ def init_db():
 init_db()
 
 
+def migrar_db():
+    """Agrega columnas y la tabla de historial sin borrar datos existentes."""
+    ejecutar("ALTER TABLE ventas ADD COLUMN IF NOT EXISTS registrado_por TEXT NOT NULL DEFAULT ''")
+    ejecutar("ALTER TABLE mermas ADD COLUMN IF NOT EXISTS registrado_por TEXT NOT NULL DEFAULT ''")
+    ejecutar("ALTER TABLE cuentas ADD COLUMN IF NOT EXISTS ultimo_acceso TIMESTAMP")
+    ejecutar("""CREATE TABLE IF NOT EXISTS auditoria (
+                    id SERIAL PRIMARY KEY,
+                    momento TIMESTAMP NOT NULL DEFAULT NOW(),
+                    quien TEXT NOT NULL,
+                    accion TEXT NOT NULL,
+                    detalle TEXT NOT NULL DEFAULT '')""")
+    ejecutar("ALTER TABLE public.auditoria ENABLE ROW LEVEL SECURITY")
+
+
+migrar_db()
+
+
 def obtener_colores():
     colores = dict(COLORES_DEFECTO)
     for f in consultar("SELECT clave, valor FROM configuracion"):
@@ -425,6 +442,12 @@ def admins_activos():
 def quedaria_sin_admin(fila):
     """True si quitar el rol o desactivar esta cuenta dejaría sin administradores."""
     return fila["rol"] == "admin" and fila["activo"] == 1 and admins_activos() <= 1
+
+
+def auditar(accion, detalle=""):
+    """Guarda en el historial quién hizo qué (acciones del administrador)."""
+    ejecutar("INSERT INTO auditoria(quien, accion, detalle) VALUES(%s,%s,%s)",
+             (session.get("usuario", "sistema"), accion, detalle[:300]))
 
 
 PUBLICAS = {"login", "registro", "static"}
@@ -956,11 +979,11 @@ td.acc form{display:inline-block;margin-left:4px}
   {% if columnas %}
   <div class="tabla-wrap">
   <table>
-    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
+    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
       {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
-      {% if es_admin %}
+      {% if es_admin or (tabla in ['ventas', 'mermas'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
       <td class="acc">
         <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
           <input type="hidden" name="tab" value="{{ tab }}">
@@ -1290,6 +1313,37 @@ td.acc form{display:inline-block;margin-left:4px}
       <div class="accion"><button class="btn azul" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i>Guardar contraseña<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
   </div>
+  <div class="card">
+    {{ banner('edit', 'Editar persona', 'Cambia el nombre o el puesto de alguien del equipo', 'azul') }}
+    <form class="reg azul" method="post" action="{{ url_for('editar_persona') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <label class="campo"><span class="lbl"><i class="ti ti-user" aria-hidden="true"></i>Persona</span>
+        <span class="caja sel"><select name="cuenta_id" required>
+          {% for p in personas %}<option value="{{ p['id'] }}">{{ p['nombre'] or p['usuario'] }} ({{ p['usuario'] }})</option>{% endfor %}
+        </select></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-id" aria-hidden="true"></i>Nuevo nombre</span>
+        <span class="caja"><input type="text" name="nombre" maxlength="60" required></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-briefcase" aria-hidden="true"></i>Nuevo puesto</span>
+        <span class="caja sel"><select name="puesto" required>
+          {% for pu in puestos_persona %}<option>{{ pu }}</option>{% endfor %}
+        </select></span></label>
+      <div class="accion"><button class="btn azul" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i>Guardar cambios<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
+  </div>
+
+  <div class="card">
+    {{ banner('history', 'Actividad reciente', 'Últimas acciones del administrador (hora de Supabase, UTC)', 'gris') }}
+    <div class="tabla-wrap">
+    <table>
+      <tr><th>Cuándo</th><th>Quién</th><th>Acción</th><th>Detalle</th></tr>
+      {% for a in auditoria %}
+      <tr><td>{{ a['momento'].strftime('%d/%m %H:%M') }}</td><td>{{ a['quien'] }}</td><td>{{ a['accion'] }}</td><td>{{ a['detalle'] }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">Todavía no hay actividad registrada.</td></tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
   {% endif %}
 {% endif %}
 
@@ -1344,6 +1398,16 @@ td.acc form{display:inline-block;margin-left:4px}
     </div>
   </div>
   {% endif %}
+
+  <div class="card">
+    {{ banner('id', 'Mi perfil', 'Así aparece tu nombre en la aplicación', 'verde') }}
+    <form class="reg verde" method="post" action="{{ url_for('actualizar_perfil') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
+      <label class="campo"><span class="lbl"><i class="ti ti-id" aria-hidden="true"></i>Nombre completo</span>
+        <span class="caja"><input type="text" name="nombre" value="{{ nombre }}" maxlength="60" required></span></label>
+      <div class="accion"><button class="btn verde" type="submit"><i class="ti ti-device-floppy" aria-hidden="true"></i>Guardar perfil<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
+  </div>
 
   <div class="card">
     {{ banner('lock', 'Mi contraseña', 'Cambia la contraseña de tu cuenta. Debe tener al menos 10 caracteres.', 'gris') }}
@@ -1603,6 +1667,8 @@ def index():
             eq = {"pe": pe, "pe_ventas": pe * precio, "mc": mc,
                   "holg": (meta - pe) / meta * 100 if meta else 0}
 
+    auditoria = (consultar("SELECT * FROM auditoria ORDER BY id DESC LIMIT 50")
+                 if (tab == "usuarios" and es_admin()) else [])
     colores = obtener_colores()
     rol = session.get("rol", "usuario")
 
@@ -1614,7 +1680,7 @@ def index():
         ind=ind, platos=platos, ventas=ventas, mermas=mermas,
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
-        personas=personas, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
+        personas=personas, auditoria=auditoria, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
         ficha=ficha, eq=eq, campos={t: campos_de(t, nombres) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
@@ -1636,6 +1702,8 @@ def agregar(tabla):
     except ValueError as err:
         flash(str(err), "error")
         return redirect(url_for("index", tab=tab))
+    if tabla in REGISTRO_USUARIO:
+        datos["registrado_por"] = session["usuario"]
     cols = ", ".join(datos)
     marcas = ", ".join(["%s"] * len(datos))
     ejecutar(f"INSERT INTO {tabla} ({cols}) VALUES ({marcas})", list(datos.values()))
@@ -1647,9 +1715,17 @@ def eliminar(tabla, id_):
     if tabla not in CAMPOS:
         abort(404)
     tab = request.form.get("tab", "dashboard")
-    if solo_admin():
-        return redirect(url_for("index", tab=tab))
-    ejecutar(f"DELETE FROM {tabla} WHERE id=%s", (id_,))
+    if es_admin():
+        ejecutar(f"DELETE FROM {tabla} WHERE id=%s", (id_,))
+        auditar("eliminar", f"{tabla} #{id_}")
+    elif tabla in REGISTRO_USUARIO:
+        # El usuario solo puede borrar los registros que él hizo hoy
+        filas = ejecutar(f"DELETE FROM {tabla} WHERE id=%s AND registrado_por=%s AND fecha=%s",
+                         (id_, session["usuario"], date.today().isoformat()))
+        if not filas:
+            flash("Solo puedes eliminar los registros que hiciste hoy.", "error")
+    else:
+        flash("Esta acción solo la puede hacer el administrador.", "error")
     return redirect(url_for("index", tab=tab))
 
 
@@ -1676,6 +1752,7 @@ def crear_persona():
         try:
             ejecutar("INSERT INTO cuentas(usuario, clave, rol, nombre, puesto, activo) VALUES(%s,%s,%s,%s,%s,1)",
                      (usuario, generate_password_hash(clave), rol, nombre, puesto))
+            auditar("crear persona", f"{usuario} ({rol}) - {nombre}")
             flash(f"{nombre} fue agregado como {ROL_CUENTA[rol]}.", "ok")
         except psycopg2.IntegrityError:
             flash("Ese usuario ya existe.", "error")
@@ -1696,6 +1773,7 @@ def cambiar_rol(id_):
     else:
         nuevo = "usuario" if fila["rol"] == "admin" else "admin"
         ejecutar("UPDATE cuentas SET rol=%s WHERE id=%s", (nuevo, id_))
+        auditar("cambiar rol", f"{fila['usuario']} -> {nuevo}")
         flash(f"'{fila['usuario']}' ahora es {ROL_CUENTA[nuevo]}.", "ok")
     return redirect(url_for("index", tab="usuarios"))
 
@@ -1714,6 +1792,7 @@ def cambiar_estado(id_):
     else:
         nuevo = 0 if fila["activo"] == 1 else 1
         ejecutar("UPDATE cuentas SET activo=%s WHERE id=%s", (nuevo, id_))
+        auditar("cambiar estado", f"{fila['usuario']} -> {'activo' if nuevo else 'inactivo'}")
         flash(f"'{fila['usuario']}' {'activado' if nuevo else 'desactivado'}.", "ok")
     return redirect(url_for("index", tab="usuarios"))
 
@@ -1731,6 +1810,7 @@ def eliminar_persona(id_):
         flash("Debe quedar al menos un administrador activo.", "error")
     else:
         ejecutar("DELETE FROM cuentas WHERE id=%s", (id_,))
+        auditar("eliminar persona", fila["usuario"])
         flash(f"'{fila['usuario']}' fue eliminado.", "ok")
     return redirect(url_for("index", tab="usuarios"))
 
@@ -1748,9 +1828,47 @@ def restablecer_clave():
     else:
         afectadas = ejecutar("UPDATE cuentas SET clave=%s WHERE id=%s",
                              (generate_password_hash(nueva), int(cuenta_id)))
+        if afectadas:
+            auditar("restablecer clave", f"cuenta #{cuenta_id}")
         flash("Contraseña restablecida." if afectadas else "Persona no encontrada.",
               "ok" if afectadas else "error")
     return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/personas/editar", methods=["POST"])
+def editar_persona():
+    if solo_admin():
+        return redirect(url_for("index", tab="usuarios"))
+    cuenta_id = request.form.get("cuenta_id", "")
+    nombre = request.form.get("nombre", "").strip()
+    puesto = request.form.get("puesto", "")
+    if not cuenta_id.isdigit():
+        flash("Selecciona una persona válida.", "error")
+    elif not 3 <= len(nombre) <= 60:
+        flash("El nombre debe tener entre 3 y 60 caracteres.", "error")
+    elif puesto not in PUESTOS_PERSONA:
+        flash("Puesto no válido.", "error")
+    else:
+        afectadas = ejecutar("UPDATE cuentas SET nombre=%s, puesto=%s WHERE id=%s",
+                             (nombre, puesto, int(cuenta_id)))
+        if afectadas:
+            auditar("editar persona", f"id {cuenta_id}: {nombre} / {puesto}")
+            flash("Datos de la persona actualizados.", "ok")
+        else:
+            flash("Persona no encontrada.", "error")
+    return redirect(url_for("index", tab="usuarios"))
+
+
+@app.route("/cuenta/perfil", methods=["POST"])
+def actualizar_perfil():
+    nombre = request.form.get("nombre", "").strip()
+    if not 3 <= len(nombre) <= 60:
+        flash("El nombre debe tener entre 3 y 60 caracteres.", "error")
+    else:
+        ejecutar("UPDATE cuentas SET nombre=%s WHERE usuario=%s", (nombre, session["usuario"]))
+        session["nombre"] = nombre
+        flash("Tu perfil fue actualizado.", "ok")
+    return redirect(url_for("index", tab="configuracion"))
 
 
 @app.route("/configuracion/guardar", methods=["POST"])
