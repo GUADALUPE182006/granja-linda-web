@@ -875,6 +875,7 @@ input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px
 .btn-sec.rojo{color:#a8322d;border-color:#f4b9b2}
 .btn-sec.rojo:hover{background:#fdeeee}
 .btn-sec i{font-size:16px}
+.btn-sec.activo-p{background:var(--p);color:#fff;border-color:var(--p)}
 .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:onda .6s ease-out forwards;pointer-events:none}
 .btn-sec .ripple{background:color-mix(in srgb,var(--p) 22%,transparent)}
 @keyframes onda{to{transform:scale(1);opacity:0}}
@@ -1223,13 +1224,18 @@ td.acc form{display:inline-block;margin-left:4px}
 
 {% if tab == 'reportes' %}
   <div class="card">
-    {{ banner('report', 'Resultados mensuales', 'Ingresos, costos y margen de cada mes registrado', 'naranja') }}
-    <div style="text-align:right;margin:-8px 0 8px">
-      <a href="{{ url_for('exportar') }}" class="btn-sec"><i class="ti ti-download" aria-hidden="true"></i>Exportar a CSV</a>
+    {{ banner('report', 'Resultados por periodo', 'Ingresos, costos y margen por día, por semana o por mes', 'naranja') }}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="{{ url_for('index', tab='reportes', periodo='diario') }}" class="btn-sec {{ 'activo-p' if periodo == 'diario' }}"><i class="ti ti-calendar-event" aria-hidden="true"></i>Diario</a>
+        <a href="{{ url_for('index', tab='reportes', periodo='semanal') }}" class="btn-sec {{ 'activo-p' if periodo == 'semanal' }}"><i class="ti ti-calendar-week" aria-hidden="true"></i>Semanal</a>
+        <a href="{{ url_for('index', tab='reportes', periodo='mensual') }}" class="btn-sec {{ 'activo-p' if periodo == 'mensual' }}"><i class="ti ti-calendar-month" aria-hidden="true"></i>Mensual</a>
+      </div>
+      <a href="{{ url_for('exportar', periodo=periodo) }}" class="btn-sec"><i class="ti ti-download" aria-hidden="true"></i>Exportar a CSV</a>
     </div>
     <div class="tabla-wrap">
     <table>
-      <tr><th>Mes</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
+      <tr><th>{{ etiqueta_periodo }}</th><th>Ingresos</th><th>Costo variable</th><th>Margen bruto</th><th>Margen %</th></tr>
       {% for r in reportes %}
       <tr><td>{{ r.mes }}</td><td>{{ r.ing|soles }}</td><td>{{ r.cv|soles }}</td><td>{{ r.margen|soles }}</td><td>{{ '%.1f'|format(r.pct) }}%</td></tr>
       {% endfor %}
@@ -1611,6 +1617,34 @@ def cambiar_clave():
 
 
 # ---------- Rutas ----------
+PERIODOS_REPORTE = {
+    "diario": ("Día", "fecha"),
+    "semanal": ("Semana (desde el lunes)", "semana"),
+    "mensual": ("Mes", "mes"),
+}
+EXPR_PERIODO = {
+    "diario": "v.fecha",
+    "semanal": "TO_CHAR(DATE_TRUNC('week', v.fecha::date), 'YYYY-MM-DD')",
+    "mensual": "LEFT(v.fecha,7)",
+}
+
+
+def reporte_por_periodo(periodo):
+    """Ingresos, costos y margen agrupados por día, semana o mes."""
+    expr = EXPR_PERIODO[periodo]
+    filas = consultar(f"""SELECT {expr} AS periodo, SUM(v.cantidad*p.precio) AS ing,
+                          SUM(v.cantidad*p.costo) AS cv FROM ventas v
+                          JOIN platos p ON p.nombre=v.plato
+                          GROUP BY {expr} ORDER BY periodo""")
+    reportes = []
+    for r in filas:
+        ing, cv = r["ing"] or 0, r["cv"] or 0
+        m = ing - cv
+        reportes.append({"mes": r["periodo"], "ing": ing, "cv": cv, "margen": m,
+                         "pct": m / ing * 100 if ing else 0})
+    return reportes
+
+
 @app.route("/")
 def index():
     tab = request.args.get("tab", "dashboard")
@@ -1638,15 +1672,11 @@ def index():
         cif = consultar("SELECT * FROM costos_cif ORDER BY id")
     if tab == "usuarios" and es_admin():
         personas = consultar("SELECT id, usuario, nombre, puesto, rol, activo FROM cuentas ORDER BY id")
+    periodo = request.args.get("periodo", "mensual")
+    if periodo not in PERIODOS_REPORTE:
+        periodo = "mensual"
     if tab == "reportes":
-        for r in consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
-                              SUM(v.cantidad*p.costo) AS cv FROM ventas v
-                              JOIN platos p ON p.nombre=v.plato
-                              GROUP BY LEFT(v.fecha,7) ORDER BY mes"""):
-            ing, cv = r["ing"] or 0, r["cv"] or 0
-            m = ing - cv
-            reportes.append({"mes": r["mes"], "ing": ing, "cv": cv, "margen": m,
-                             "pct": m / ing * 100 if ing else 0})
+        reportes = reporte_por_periodo(periodo)
     nombres = ([r["nombre"] for r in consultar("SELECT nombre FROM platos ORDER BY id")]
                if tab == "ventas" else [])
 
@@ -1690,6 +1720,7 @@ def index():
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
         personas=personas, auditoria=auditoria, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
+        periodo=periodo, etiqueta_periodo=PERIODOS_REPORTE[periodo][0],
         ficha=ficha, eq=eq, campos={t: campos_de(t, nombres) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
@@ -1909,19 +1940,17 @@ def restaurar_colores():
 
 @app.route("/exportar.csv")
 def exportar():
-    rows = consultar("""SELECT LEFT(v.fecha,7) AS mes, SUM(v.cantidad*p.precio) AS ing,
-                        SUM(v.cantidad*p.costo) AS cv FROM ventas v
-                        JOIN platos p ON p.nombre=v.plato
-                        GROUP BY LEFT(v.fecha,7) ORDER BY mes""")
+    periodo = request.args.get("periodo", "mensual")
+    if periodo not in PERIODOS_REPORTE:
+        periodo = "mensual"
     salida = io.StringIO()
     w = csv.writer(salida)
-    w.writerow(["Mes", "Ingresos", "Costo variable", "Margen bruto", "Margen %"])
-    for r in rows:
-        ing, cv = r["ing"] or 0, r["cv"] or 0
-        w.writerow([r["mes"], round(ing, 2), round(cv, 2), round(ing - cv, 2),
-                    round((ing - cv) / ing * 100, 1) if ing else 0])
+    w.writerow([PERIODOS_REPORTE[periodo][0], "Ingresos", "Costo variable", "Margen bruto", "Margen %"])
+    for r in reporte_por_periodo(periodo):
+        w.writerow([r["mes"], round(r["ing"], 2), round(r["cv"], 2),
+                    round(r["margen"], 2), round(r["pct"], 1)])
     return Response(salida.getvalue(), mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=reporte_mensual.csv"})
+                    headers={"Content-Disposition": f"attachment; filename=reporte_{periodo}.csv"})
 
 
 if __name__ == "__main__":
