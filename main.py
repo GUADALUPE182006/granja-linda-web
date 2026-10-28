@@ -59,6 +59,8 @@ CAMPOS = {
                ("causa", "Causa", "texto", CAUSAS)],
     "planilla_mod": [("rol", "Puesto", "texto", PUESTOS),
                      ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
+    "compras": [("fecha", "Fecha", "fecha", None), ("insumo", "Insumo", "texto", None),
+                ("cantidad", "Cantidad", "decimal", None), ("precio", "Precio unitario (S/)", "decimal", None)],
     "costos_cif": [("concepto", "Concepto", "texto", CONCEPTOS_CIF),
                    ("monto", "Monto mensual (S/)", "decimal", None)],
 }
@@ -69,7 +71,8 @@ ICONOS = {"rol": "user", "sueldo": "coin", "concepto": "file-text", "monto": "co
           "costo": "coin", "causa": "alert-triangle"}
 
 SECCIONES = [("dashboard", "chart-bar", "Dashboard"), ("ventas", "shopping-cart", "Ventas"),
-             ("mermas", "box", "Mermas"), ("costos", "calculator", "Costos MOD/CIF"),
+             ("mermas", "box", "Mermas"), ("compras", "shopping-bag", "Compras de insumos"),
+             ("cierre", "cash", "Cierre de caja"), ("costos", "calculator", "Costos MOD/CIF"),
              ("fichas", "file-text", "Fichas técnicas"), ("equilibrio", "scale", "Punto de equilibrio"),
              ("reportes", "report", "Reportes"), ("usuarios", "users", "Usuarios")]
 
@@ -314,6 +317,13 @@ def migrar_db():
                     accion TEXT NOT NULL,
                     detalle TEXT NOT NULL DEFAULT '')""")
     ejecutar("ALTER TABLE public.auditoria ENABLE ROW LEVEL SECURITY")
+    ejecutar("""CREATE TABLE IF NOT EXISTS compras (
+                    id SERIAL PRIMARY KEY,
+                    fecha TEXT NOT NULL,
+                    insumo TEXT NOT NULL,
+                    cantidad DOUBLE PRECISION NOT NULL,
+                    precio DOUBLE PRECISION NOT NULL)""")
+    ejecutar("ALTER TABLE public.compras ENABLE ROW LEVEL SECURITY")
 
 
 migrar_db()
@@ -442,6 +452,26 @@ def admins_activos():
 def quedaria_sin_admin(fila):
     """True si quitar el rol o desactivar esta cuenta dejaría sin administradores."""
     return fila["rol"] == "admin" and fila["activo"] == 1 and admins_activos() <= 1
+
+
+def alertas_negocio(ind, platos, compras_hist):
+    """Avisos automáticos: mermas altas, márgenes bajos y subidas de precio de insumos."""
+    alertas = []
+    if ind and ind["pct_mermas"] > 10:
+        alertas.append(("rojo", f"Las mermas representan {ind['pct_mermas']:.1f}% del costo de insumos (objetivo: menos de 10%)."))
+    for p in platos:
+        if p["margen"] < 35:
+            alertas.append(("amarillo", f"El plato «{p['nombre']}» tiene un margen de {p['margen']}% (mínimo recomendado: 35%)."))
+    precios = {}
+    for c in compras_hist:  # ordenado por insumo y fecha, la compra más reciente primero
+        precios.setdefault(c["insumo"], []).append(c["precio"])
+    for insumo, lista in precios.items():
+        if len(lista) >= 2 and lista[1] > 0:
+            subida = (lista[0] - lista[1]) / lista[1] * 100
+            if subida > 10:
+                alertas.append(("amarillo", f"El insumo «{insumo}» subió {subida:.0f}% en su última compra "
+                                            f"(S/ {lista[1]:.2f} → S/ {lista[0]:.2f})."))
+    return alertas
 
 
 def auditar(accion, detalle=""):
@@ -724,6 +754,19 @@ PLANTILLA = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>La Granja Linda - Gestión</title>
+<script>
+(function () {
+  try { if (localStorage.getItem('granja_tema') === 'oscuro') document.documentElement.setAttribute('data-tema', 'oscuro'); } catch (e) {}
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#btn-tema');
+    if (!b) return;
+    var oscuro = document.documentElement.getAttribute('data-tema') === 'oscuro';
+    if (oscuro) document.documentElement.removeAttribute('data-tema');
+    else document.documentElement.setAttribute('data-tema', 'oscuro');
+    try { localStorage.setItem('granja_tema', oscuro ? 'claro' : 'oscuro'); } catch (e) {}
+  });
+})();
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 :root{--tx:#2a1a0e;--mu:#7d6b5d;--ln:#efe3d5;--crema:#fbf7f2;
@@ -918,6 +961,29 @@ td.acc form{display:inline-block;margin-left:4px}
 .pv-chip{padding:8px 14px;border-radius:999px;color:#fff;font-size:13px;background:var(--pv-a,#2e6aa8)}
 .pv-tarjeta{flex:1;min-width:180px;border-radius:14px;padding:14px;background:color-mix(in srgb,var(--pv-p,#e0661f) 14%,white)}
 .pv-tarjeta b{display:block;font-size:20px;font-weight:500;color:var(--tx)}
+.alerta{padding:12px 16px;border-radius:12px;margin-bottom:10px;font-size:14px}
+.alerta.rojo{background:var(--rj-f);color:var(--rj-t)}
+.alerta.amarillo{background:var(--am-f);color:var(--am-t)}
+.alerta.ok{background:var(--vd-f);color:var(--vd-t)}
+html[data-tema="oscuro"]{--tx:#f1e7dc;--mu:#b9a797;--ln:#3b312a;--crema:#15110e;--blanco:#221c18;
+  --rj-f:#3a2220;--rj-t:#ffb4aa;--am-f:#3a3018;--am-t:#f5d98a;--vd-f:#1f2e1b;--vd-t:#b8e6a4;--barra-r:#e0655f}
+html[data-tema="oscuro"] body{background:var(--crema);color:var(--tx)}
+html[data-tema="oscuro"] .card,html[data-tema="oscuro"] .hero,html[data-tema="oscuro"] .tabla-wrap,
+html[data-tema="oscuro"] .vista-previa,html[data-tema="oscuro"] .paleta{background:var(--blanco);border-color:var(--ln)}
+html[data-tema="oscuro"] .bloque{background:#2a221d;border-color:#3b312a}
+html[data-tema="oscuro"] .bloque span,html[data-tema="oscuro"] .nota,html[data-tema="oscuro"] .hero small,
+html[data-tema="oscuro"] .hero .pie,html[data-tema="oscuro"] .solo-lectura{color:var(--mu)}
+html[data-tema="oscuro"] .hero b,html[data-tema="oscuro"] .bloque b,html[data-tema="oscuro"] .total b{color:var(--tx)}
+html[data-tema="oscuro"] input,html[data-tema="oscuro"] select{background:#2a221d;color:var(--tx);border-color:#4a3e35}
+html[data-tema="oscuro"] th{background:#2b241f;color:var(--tx)}
+html[data-tema="oscuro"] td{border-color:#3b312a;color:var(--tx)}
+html[data-tema="oscuro"] tbody tr:hover td,html[data-tema="oscuro"] table tr:hover td{background:#2a221d}
+html[data-tema="oscuro"] .res{background:#2b241f;color:var(--tx)}
+html[data-tema="oscuro"] .filas div{border-color:#3b312a;color:var(--tx)}
+html[data-tema="oscuro"] .barra{background:#3b312a}
+html[data-tema="oscuro"] .btn-sec{background:#2a221d;color:var(--tx)}
+html[data-tema="oscuro"] .campo,html[data-tema="oscuro"] .paleta .nombre,html[data-tema="oscuro"] .pv-tarjeta b{color:var(--tx)}
+html[data-tema="oscuro"] .fondo-anim{opacity:.35}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
   #cursor-glow{display:none}
@@ -1003,10 +1069,10 @@ td.acc form{display:inline-block;margin-left:4px}
     <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
-      {% for c, lbl in columnas %}<td>{% if c == 'total' %}{{ f[c]|soles }}{% else %}{{ f[c] }}{% endif %}</td>{% endfor %}
+      {% for c, lbl in columnas %}<td>{% if c in ['total', 'precio'] %}{{ f[c]|soles }}{% else %}{{ f[c] }}{% endif %}</td>{% endfor %}
       {% if es_admin or (tabla in ['ventas', 'mermas'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
       <td class="acc">
-        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
+        <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" onsubmit="return confirm('¿Seguro que quieres eliminar?')">
           <input type="hidden" name="tab" value="{{ tab }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
           <button class="btn-sec {{ color }}" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
@@ -1063,6 +1129,7 @@ td.acc form{display:inline-block;margin-left:4px}
   </div>
   <div class="derecha">
     <span>{{ ico('calendar') }} Octubre 2026 · Nuevo Chimbote</span>
+    <button type="button" class="engranaje" id="btn-tema" title="Modo claro / oscuro" aria-label="Cambiar modo claro u oscuro"><i class="ti ti-moon" aria-hidden="true"></i></button>
     <a href="{{ url_for('index', tab='configuracion') }}" class="engranaje{{ ' activo' if tab=='configuracion' else '' }}" title="Configuración" aria-label="Configuración"><i class="ti ti-settings" aria-hidden="true"></i></a>
     <form method="post" action="{{ url_for('salir') }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
@@ -1085,6 +1152,14 @@ td.acc form{display:inline-block;margin-left:4px}
 {% for cat, m in get_flashed_messages(with_categories=true) %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
 
 {% if tab == 'dashboard' %}
+  <div class="card">
+    {{ banner('bell', 'Alertas', 'Avisos automáticos que conviene revisar', 'rojo') }}
+    {% for nivel, texto in alertas %}
+      <div class="alerta {{ nivel }}">{{ texto }}</div>
+    {% else %}
+      <div class="alerta ok">Todo en orden: no hay alertas por ahora.</div>
+    {% endfor %}
+  </div>
   <section class="hero">
     <div class="txt">
       <div style="width:60px;height:60px;border-radius:50%;font-size:28px;background:linear-gradient(135deg,var(--p),var(--p-osc));color:#fff;display:flex;align-items:center;justify-content:center">{{ ico('chart-bar') }}</div>
@@ -1242,6 +1317,42 @@ td.acc form{display:inline-block;margin-left:4px}
   </div>
 {% endif %}
 
+{% if tab == 'compras' %}
+  <div class="card">
+    {{ banner('shopping-bag', 'Compras de insumos', 'Registra el precio de cada compra para detectar cuándo suben los insumos', 'verde') }}
+    {{ registro('compras', campos.compras,
+       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('precio','Precio unitario')], compras_list,
+       'verde', 'Registrar compra') }}
+  </div>
+{% endif %}
+
+{% if tab == 'cierre' %}
+  <div class="card">
+    {{ banner('cash', 'Cierre de caja', 'Lo cobrado por medio de pago en el día, y el efectivo que cuentas en caja', 'verde') }}
+    <form class="reg verde" method="get">
+      <input type="hidden" name="tab" value="cierre">
+      <label class="campo"><span class="lbl"><i class="ti ti-calendar" aria-hidden="true"></i>Fecha</span>
+        <span class="caja"><input type="date" name="fecha" value="{{ cierre.fecha }}"></span></label>
+      <label class="campo"><span class="lbl"><i class="ti ti-cash" aria-hidden="true"></i>Efectivo contado en caja (S/)</span>
+        <span class="caja"><input type="number" step="any" min="0" name="contado" value="{{ '' if cierre.contado is none else cierre.contado }}" placeholder="Ej. 320.50"></span></label>
+      <div class="accion"><button class="btn verde" type="submit"><i class="ti ti-calculator" aria-hidden="true"></i>Calcular cierre<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
+    </form>
+    <div class="tabla-wrap">
+    <table>
+      <tr><th>Medio de pago</th><th>Cobrado</th></tr>
+      {% for medio, monto in cierre.pagos %}<tr><td>{{ medio }}</td><td>{{ monto|soles }}</td></tr>{% endfor %}
+      <tr style="font-weight:600"><td>Total del día</td><td>{{ cierre.total|soles }}</td></tr>
+    </table>
+    </div>
+    {% if cierre.contado is not none %}
+      {% set dif = cierre.diferencia %}
+      <div class="res">Efectivo esperado: {{ cierre.efectivo|soles }} · Contado: {{ cierre.contado|soles }} ·
+        Diferencia: <b style="color:{{ 'var(--vd-t)' if dif == 0 else ('#2e7d32' if dif > 0 else 'var(--rj-t)') }}">{{ dif|soles }}</b>
+        {% if dif|round(2) == 0 %}(cuadra){% elif dif > 0 %}(sobra){% else %}(falta){% endif %}</div>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if tab == 'reportes' %}
   <div class="card">
     {{ banner('report', 'Resultados por periodo', 'Ingresos, costos y margen por día, por semana o por mes', 'naranja') }}
@@ -1288,7 +1399,7 @@ td.acc form{display:inline-block;margin-left:4px}
             <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
             <button class="btn-sec" type="submit">{{ 'Desactivar' if p['activo'] == 1 else 'Activar' }}</button>
           </form>
-          <form method="post" action="{{ url_for('eliminar_persona', id_=p['id']) }}">
+          <form method="post" action="{{ url_for('eliminar_persona', id_=p['id']) }}" onsubmit="return confirm('¿Seguro que quieres eliminar a esta persona?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_tok }}">
             <button class="btn-sec rojo" type="submit"><i class="ti ti-trash" aria-hidden="true"></i>Eliminar</button>
           </form>
@@ -1728,6 +1839,29 @@ def index():
             eq = {"pe": pe, "pe_ventas": pe * precio, "mc": mc,
                   "holg": (meta - pe) / meta * 100 if meta else 0}
 
+    alertas, compras_list, cierre = [], [], None
+    compras_hist = (consultar("SELECT insumo, precio, fecha FROM compras ORDER BY insumo, fecha DESC, id DESC")
+                    if tab == "dashboard" else [])
+    if tab == "dashboard":
+        alertas = alertas_negocio(ind, platos, compras_hist)
+    if tab == "compras":
+        compras_list = consultar("SELECT * FROM compras ORDER BY id DESC")
+    if tab == "cierre":
+        fecha_c = request.args.get("fecha") or date.today().isoformat()
+        por_pago = {f["pago"]: float(f["total"] or 0) for f in consultar("""
+            SELECT v.pago, SUM(v.cantidad*p.precio) AS total
+            FROM ventas v LEFT JOIN platos p ON p.nombre=v.plato
+            WHERE v.fecha=%s GROUP BY v.pago""", (fecha_c,))}
+        contado = num_arg("contado", "")
+        efectivo = por_pago.get("Efectivo", 0.0)
+        cierre = {
+            "fecha": fecha_c,
+            "pagos": [(medio, por_pago.get(medio, 0.0)) for medio in PAGOS],
+            "total": sum(por_pago.values()),
+            "efectivo": efectivo,
+            "contado": contado,
+            "diferencia": (contado - efectivo) if contado is not None else None,
+        }
     precios_platos = ({r["nombre"]: float(r["precio"]) for r in consultar("SELECT nombre, precio FROM platos")}
                       if tab == "ventas" else {})
     auditoria = (consultar("SELECT * FROM auditoria ORDER BY id DESC LIMIT 50")
@@ -1745,6 +1879,7 @@ def index():
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
         personas=personas, auditoria=auditoria, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
         periodo=periodo, etiqueta_periodo=PERIODOS_REPORTE[periodo][0], precios_platos=precios_platos,
+        alertas=alertas, compras_list=compras_list, cierre=cierre,
         ficha=ficha, eq=eq, campos={t: campos_de(t, nombres) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
