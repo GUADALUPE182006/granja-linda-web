@@ -1397,6 +1397,15 @@ td.acc form{display:inline-block;margin-left:4px}
       </div>
     </div>
   </div>
+  {% else %}
+  <div class="card">
+    {{ banner('palette', 'Apariencia', 'Estos son los colores de la aplicación. Solo el administrador puede cambiarlos.', 'naranja') }}
+    <div class="paletas">
+      <div class="paleta"><span class="nombre">Color principal</span><span class="muestras"><span style="background:{{ colores.principal }}"></span></span></div>
+      <div class="paleta"><span class="nombre">Color secundario</span><span class="muestras"><span style="background:{{ colores.secundario }}"></span></span></div>
+      <div class="paleta"><span class="nombre">Color de acento</span><span class="muestras"><span style="background:{{ colores.acento }}"></span></span></div>
+    </div>
+  </div>
   {% endif %}
 
   <div class="card">
