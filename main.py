@@ -972,6 +972,26 @@ td.acc form{display:inline-block;margin-left:4px}
         {% endif %}
       </label>
     {% endfor %}
+    {% if tabla == 'ventas' %}
+    <div class="res" id="total-venta" style="grid-column:1/-1;font-size:18px">Total a cobrar: S/ 0.00</div>
+    <script>
+    (function () {
+      var precios = {{ precios_platos|tojson }};
+      var f = document.querySelector('form[action$="/agregar/ventas"]');
+      if (!f) return;
+      var plato = f.querySelector('select[name="plato"]');
+      var cant = f.querySelector('input[name="cantidad"]');
+      var out = document.getElementById('total-venta');
+      function calcular() {
+        var precio = precios[plato.value] || 0;
+        var cantidad = parseFloat(cant.value) || 0;
+        out.textContent = 'Total a cobrar: S/ ' + (precio * cantidad).toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+      plato.addEventListener('change', calcular);
+      cant.addEventListener('input', calcular);
+    })();
+    </script>
+    {% endif %}
     <div class="accion">
       <button class="btn {{ color }}" type="submit"><i class="ti ti-plus" aria-hidden="true"></i>{{ boton }}<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button>
     </div>
@@ -983,7 +1003,7 @@ td.acc form{display:inline-block;margin-left:4px}
     <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
-      {% for c, lbl in columnas %}<td>{{ f[c] }}</td>{% endfor %}
+      {% for c, lbl in columnas %}<td>{% if c == 'total' %}{{ f[c]|soles }}{% else %}{{ f[c] }}{% endif %}</td>{% endfor %}
       {% if es_admin or (tabla in ['ventas', 'mermas'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
       <td class="acc">
         <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}">
@@ -1121,7 +1141,7 @@ td.acc form{display:inline-block;margin-left:4px}
   <div class="card">
     {{ banner('shopping-cart', 'Registrar venta', 'Anota cada venta por plato, canal y medio de pago', 'naranja') }}
     {{ registro('ventas', campos.ventas,
-       [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago')], ventas,
+       [('fecha','Fecha'),('plato','Plato'),('cantidad','Cantidad'),('canal','Canal'),('pago','Pago'),('total','Total')], ventas,
        'naranja', 'Registrar venta') }}
   </div>
 {% endif %}
@@ -1664,7 +1684,9 @@ def index():
     if tab == "dashboard":
         ind = indicadores()
     if tab == "ventas":
-        ventas = consultar("SELECT * FROM ventas ORDER BY id DESC")
+        ventas = consultar("""SELECT v.*, COALESCE(v.cantidad*p.precio, 0) AS total
+                              FROM ventas v LEFT JOIN platos p ON p.nombre=v.plato
+                              ORDER BY v.id DESC""")
     if tab == "mermas":
         mermas = consultar("SELECT * FROM mermas ORDER BY id DESC")
     if tab == "costos":
@@ -1706,6 +1728,8 @@ def index():
             eq = {"pe": pe, "pe_ventas": pe * precio, "mc": mc,
                   "holg": (meta - pe) / meta * 100 if meta else 0}
 
+    precios_platos = ({r["nombre"]: float(r["precio"]) for r in consultar("SELECT nombre, precio FROM platos")}
+                      if tab == "ventas" else {})
     auditoria = (consultar("SELECT * FROM auditoria ORDER BY id DESC LIMIT 50")
                  if (tab == "usuarios" and es_admin()) else [])
     colores = obtener_colores()
@@ -1720,7 +1744,7 @@ def index():
         mermas_total=sum(m["costo"] for m in mermas), mod=mod, cif=cif,
         total_mod=total_mod, total_cif=total_cif, unid=unid, pro=pro,
         personas=personas, auditoria=auditoria, puestos_persona=PUESTOS_PERSONA, reportes=reportes,
-        periodo=periodo, etiqueta_periodo=PERIODOS_REPORTE[periodo][0],
+        periodo=periodo, etiqueta_periodo=PERIODOS_REPORTE[periodo][0], precios_platos=precios_platos,
         ficha=ficha, eq=eq, campos={t: campos_de(t, nombres) for t in CAMPOS},
         colores=colores, tema=tema_css(colores), presets=PRESETS,
         usuario=session.get("usuario", ""), nombre=session.get("nombre", ""),
