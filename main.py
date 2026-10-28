@@ -942,6 +942,7 @@ td.acc form{display:inline-block;margin-left:4px}
 .total{display:flex;align-items:center;gap:16px;border-radius:16px;padding:18px 20px;margin-top:16px;color:#fff;position:relative;overflow:hidden}
 .total.naranja{background:linear-gradient(90deg,var(--p),var(--p-osc))}
 .total.verde{background:linear-gradient(90deg,var(--s),var(--s-osc))}
+.total.azul{background:linear-gradient(90deg,var(--a),var(--a-osc))}
 .total .circ{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:24px}
 .total small{font-size:13px;opacity:.9;display:block}
 .total b{font-size:26px;font-weight:500}
@@ -1266,8 +1267,11 @@ html[data-tema="oscuro"] .fondo-anim{opacity:.35}
         <span class="caja"><input type="number" name="unid" value="{{ unid|int }}" min="1"></span></label>
       <div class="accion"><button class="btn azul" type="submit"><i class="ti ti-calculator" aria-hidden="true"></i>Calcular<i class="ti ti-chevron-right flecha" aria-hidden="true"></i></button></div>
     </form>
-    <div class="res">MOD + CIF: {{ (total_mod+total_cif)|soles }}
-      {% if pro %} → {{ pro|soles }} por plato{% endif %}</div>
+    <div class="total azul">
+      <div class="circ"><i class="ti ti-calculator" aria-hidden="true"></i></div>
+      <div><small>MOD + CIF del mes:</small><b>{{ (total_mod+total_cif)|soles }}</b></div>
+      <div style="margin-left:auto;text-align:right"><small>Costo por plato:</small><b>{{ pro|soles if pro else '—' }}</b></div>
+    </div>
   </div>
 {% endif %}
 
