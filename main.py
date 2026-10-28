@@ -49,6 +49,9 @@ PUESTOS_PERSONA = ["Cajero(a)", "Cocinero(a)", "Ayudante de cocina", "Delivery",
 
 ROL_CUENTA = {"admin": "Administrador", "usuario": "Usuario"}
 REGISTRO_USUARIO = {"ventas", "mermas", "compras"}
+# Los usuarios solo pueden borrar lo que registraron hoy en estas tablas (compras solo la borra el administrador)
+BORRA_PROPIO = {"ventas", "mermas"}
+UNIDADES_COMPRA = ["kg", "g", "litro", "ml", "unidad", "docena", "paquete"]
 
 CAMPOS = {
     "ventas": [("fecha", "Fecha", "fecha", None), ("plato", "Plato", "texto", None),
@@ -60,7 +63,8 @@ CAMPOS = {
     "planilla_mod": [("rol", "Puesto", "texto", PUESTOS),
                      ("sueldo", "Sueldo mensual (S/)", "decimal", None)],
     "compras": [("fecha", "Fecha", "fecha", None), ("insumo", "Insumo", "texto", None),
-                ("cantidad", "Cantidad", "decimal", None), ("precio", "Precio unitario (S/)", "decimal", None)],
+                ("cantidad", "Cantidad", "decimal", None), ("unidad", "Unidad de medida", "texto", UNIDADES_COMPRA),
+                ("precio", "Precio unitario (S/)", "decimal", None)],
     "costos_cif": [("concepto", "Concepto", "texto", CONCEPTOS_CIF),
                    ("monto", "Monto mensual (S/)", "decimal", None)],
 }
@@ -325,6 +329,7 @@ def migrar_db():
                     precio DOUBLE PRECISION NOT NULL)""")
     ejecutar("ALTER TABLE public.compras ENABLE ROW LEVEL SECURITY")
     ejecutar("ALTER TABLE compras ADD COLUMN IF NOT EXISTS registrado_por TEXT NOT NULL DEFAULT ''")
+    ejecutar("ALTER TABLE compras ADD COLUMN IF NOT EXISTS unidad TEXT NOT NULL DEFAULT 'unidad'")
 
 
 migrar_db()
@@ -1067,11 +1072,11 @@ html[data-tema="oscuro"] .fondo-anim{opacity:.35}
   {% if columnas %}
   <div class="tabla-wrap">
   <table>
-    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas', 'compras'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
+    <tr>{% for c, lbl in columnas %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}">{{ lbl }}</th>{% endfor %}{% if es_admin or tabla in ['ventas', 'mermas'] %}<th class="{{ 'verde-h' if color == 'verde' }} {{ 'azul-h' if color == 'azul' }}"></th>{% endif %}</tr>
     {% for f in filas %}
     <tr>
       {% for c, lbl in columnas %}<td>{% if c in ['total', 'precio'] %}{{ f[c]|soles }}{% else %}{{ f[c] }}{% endif %}</td>{% endfor %}
-      {% if es_admin or (tabla in ['ventas', 'mermas', 'compras'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
+      {% if es_admin or (tabla in ['ventas', 'mermas'] and f['registrado_por'] == usuario and f['fecha'] == hoy) %}
       <td class="acc">
         <form method="post" action="{{ url_for('eliminar', tabla=tabla, id_=f['id']) }}" onsubmit="return confirm('¿Seguro que quieres eliminar?')">
           <input type="hidden" name="tab" value="{{ tab }}">
@@ -1322,7 +1327,7 @@ html[data-tema="oscuro"] .fondo-anim{opacity:.35}
   <div class="card">
     {{ banner('shopping-bag', 'Compras de insumos', 'Registra el precio de cada compra para detectar cuándo suben los insumos', 'verde') }}
     {{ registro('compras', campos.compras,
-       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('precio','Precio unitario')], compras_list,
+       [('fecha','Fecha'),('insumo','Insumo'),('cantidad','Cantidad'),('unidad','Unidad'),('precio','Precio unitario')], compras_list,
        'verde', 'Registrar compra') }}
   </div>
 {% endif %}
@@ -1918,7 +1923,7 @@ def eliminar(tabla, id_):
     if es_admin():
         ejecutar(f"DELETE FROM {tabla} WHERE id=%s", (id_,))
         auditar("eliminar", f"{tabla} #{id_}")
-    elif tabla in REGISTRO_USUARIO:
+    elif tabla in BORRA_PROPIO:
         # El usuario solo puede borrar los registros que él hizo hoy
         filas = ejecutar(f"DELETE FROM {tabla} WHERE id=%s AND registrado_por=%s AND fecha=%s",
                          (id_, session["usuario"], date.today().isoformat()))
